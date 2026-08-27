@@ -1,0 +1,14 @@
+---
+description: "Core product and engineering rules for LifeMax"
+alwaysApply: true
+---
+# LifeMax core rule
+
+Read @AGENTS.md and @docs/PRODUCT.md before significant work.
+
+- Build a character OS, not a generic habit tracker.
+- Do not introduce a universal life score.
+- Favor minimal, high-coherence product loops over feature sprawl.
+- TypeScript strict mode; keep domain logic out of presentation components.
+- For integrations, create provider adapters and minimize sensitive data retention.
+- Update @docs/ROADMAP.md when meaningful milestones are completed.
