@@ -21,7 +21,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migration-check": "vitest run --project integration tests/integration/migrations.test.ts",
     "backup:check": "vitest run --project integration tests/integration/backup.test.ts",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:architecture && pnpm build"
+    "verify": "prettier --check . && eslint . --max-warnings=0 && tsc --noEmit && vitest run --project unit && vitest run --project integration && vitest run --project architecture && NEXT_TELEMETRY_DISABLED=1 next build"
   },
   "dependencies": {
     "@node-rs/argon2": "2.0.2",
