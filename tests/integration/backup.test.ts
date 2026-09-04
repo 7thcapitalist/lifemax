@@ -51,6 +51,48 @@ describe("shipped SQLite backup and restore CLIs", () => {
 
       const checked = command("restore:check", backupPath, sourcePath);
       expect(checked.status, checked.stderr).toBe(0);
+
+      const emptyLookalikePath = path.join(directory, "empty-lookalike.sqlite");
+      const emptyLookalike = openDatabase(emptyLookalikePath);
+      emptyLookalike.sqlite.exec(
+        "CREATE TABLE __lifemaxing_migrations(name TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
+      );
+      emptyLookalike.sqlite.close();
+      const emptyChecked = command(
+        "restore:check",
+        emptyLookalikePath,
+        sourcePath,
+      );
+      expect(emptyChecked.status).not.toBe(0);
+      expect(emptyChecked.stderr).toContain("MIGRATION_NOT_APPLIED");
+
+      const badChecksumPath = path.join(directory, "bad-checksum.sqlite");
+      fs.copyFileSync(backupPath, badChecksumPath);
+      const badChecksum = openDatabase(badChecksumPath);
+      badChecksum.sqlite
+        .prepare("UPDATE __lifemaxing_migrations SET checksum=?")
+        .run("0".repeat(64));
+      badChecksum.sqlite.close();
+      const badChecked = command("restore:check", badChecksumPath, sourcePath);
+      expect(badChecked.status).not.toBe(0);
+      expect(badChecked.stderr).toContain("MIGRATION_CHECKSUM_MISMATCH");
+
+      const unexpectedPath = path.join(directory, "unexpected.sqlite");
+      fs.copyFileSync(backupPath, unexpectedPath);
+      const unexpected = openDatabase(unexpectedPath);
+      unexpected.sqlite
+        .prepare(
+          "INSERT INTO __lifemaxing_migrations(name,checksum,applied_at) VALUES (?,?,?)",
+        )
+        .run("9999_unexpected.sql", "0".repeat(64), "2026-09-03T12:00:00Z");
+      unexpected.sqlite.close();
+      const unexpectedChecked = command(
+        "restore:check",
+        unexpectedPath,
+        sourcePath,
+      );
+      expect(unexpectedChecked.status).not.toBe(0);
+      expect(unexpectedChecked.stderr).toContain("MIGRATION_UNEXPECTED");
       const restored = openDatabase(backupPath);
       expect(restored.sqlite.pragma("integrity_check", { simple: true })).toBe(
         "ok",
@@ -65,7 +107,7 @@ describe("shipped SQLite backup and restore CLIs", () => {
     } finally {
       fs.rmSync(directory, { recursive: true });
     }
-  });
+  }, 15_000);
 
   it("rejects a target path traversing a symbolic-link parent", () => {
     const directory = fs.mkdtempSync(

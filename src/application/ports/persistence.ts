@@ -17,6 +17,9 @@ export type StoredSession = {
   idleExpiresAt: string;
   absoluteExpiresAt: string;
   revokedAt: string | null;
+  tokenMatch: "current" | "previous";
+  previousTokenExpiresAt: string | null;
+  previousTokenUsesRemaining: number;
 };
 
 export interface TransactionPort {
@@ -41,6 +44,10 @@ export interface OwnerRepository {
   ): void;
 }
 
+export interface PrivacyDeletionPort {
+  deleteOwnerGraph(ownerId: string): boolean;
+}
+
 export interface SessionRepository {
   create(input: {
     id: string;
@@ -56,6 +63,14 @@ export interface SessionRepository {
     id: string,
     expectedTokenHash: string,
     nextTokenHash: string,
+    now: string,
+    idleExpiresAt: string,
+    previousTokenExpiresAt: string,
+    previousTokenUses: number,
+  ): boolean;
+  usePreviousToken(
+    id: string,
+    tokenHash: string,
     now: string,
     idleExpiresAt: string,
   ): boolean;

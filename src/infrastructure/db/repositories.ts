@@ -1,6 +1,7 @@
 import type {
   OwnerRecord,
   OwnerRepository,
+  PrivacyDeletionPort,
   SessionRepository,
   StoredSession,
   TransactionPort,
@@ -10,11 +11,16 @@ import { newId } from "@/domain/shared/id";
 import type { DatabaseConnection } from "./client";
 
 export class SqliteRepositories
-  implements OwnerRepository, SessionRepository, TransactionPort
+  implements
+    OwnerRepository,
+    SessionRepository,
+    TransactionPort,
+    PrivacyDeletionPort
 {
   readonly owners: OwnerRepository = this;
   readonly sessions: SessionRepository = this;
   readonly transactions: TransactionPort = this;
+  readonly privacy: PrivacyDeletionPort = this;
 
   constructor(private readonly connection: DatabaseConnection) {}
 
@@ -97,9 +103,13 @@ export class SqliteRepositories
   findByTokenHash(tokenHash: string): StoredSession | undefined {
     return this.connection.sqlite
       .prepare(
-        "SELECT id, owner_id AS ownerId, token_hash AS tokenHash, csrf_hash AS csrfHash, idle_expires_at AS idleExpiresAt, absolute_expires_at AS absoluteExpiresAt, revoked_at AS revokedAt FROM session WHERE token_hash=?",
+        `SELECT id, owner_id AS ownerId, token_hash AS tokenHash, csrf_hash AS csrfHash,
+          idle_expires_at AS idleExpiresAt, absolute_expires_at AS absoluteExpiresAt, revoked_at AS revokedAt,
+          previous_token_expires_at AS previousTokenExpiresAt, previous_token_uses_remaining AS previousTokenUsesRemaining,
+          CASE WHEN token_hash=? THEN 'current' ELSE 'previous' END AS tokenMatch
+         FROM session WHERE token_hash=? OR previous_token_hash=? LIMIT 1`,
       )
-      .get(tokenHash) as StoredSession | undefined;
+      .get(tokenHash, tokenHash, tokenHash) as StoredSession | undefined;
   }
 
   rotate(
@@ -108,23 +118,57 @@ export class SqliteRepositories
     nextTokenHash: string,
     now: string,
     idleExpiresAt: string,
+    previousTokenExpiresAt: string,
+    previousTokenUses: number,
   ): boolean {
     return (
       this.connection.sqlite
         .prepare(
-          "UPDATE session SET token_hash=?,last_used_at=?,idle_expires_at=? WHERE id=? AND token_hash=? AND revoked_at IS NULL",
+          `UPDATE session SET token_hash=?, previous_token_hash=?, previous_token_expires_at=?,
+           previous_token_uses_remaining=?, last_used_at=?, idle_expires_at=?
+           WHERE id=? AND token_hash=? AND revoked_at IS NULL`,
         )
-        .run(nextTokenHash, now, idleExpiresAt, id, expectedTokenHash)
-        .changes === 1
+        .run(
+          nextTokenHash,
+          expectedTokenHash,
+          previousTokenExpiresAt,
+          previousTokenUses,
+          now,
+          idleExpiresAt,
+          id,
+          expectedTokenHash,
+        ).changes === 1
+    );
+  }
+
+  usePreviousToken(
+    id: string,
+    tokenHash: string,
+    now: string,
+    idleExpiresAt: string,
+  ): boolean {
+    return (
+      this.connection.sqlite
+        .prepare(
+          `UPDATE session SET previous_token_uses_remaining=previous_token_uses_remaining-1,
+           last_used_at=?, idle_expires_at=?
+           WHERE id=? AND previous_token_hash=? AND previous_token_expires_at>?
+             AND previous_token_uses_remaining>0 AND revoked_at IS NULL`,
+        )
+        .run(now, idleExpiresAt, id, tokenHash, now).changes === 1
     );
   }
 
   revoke(tokenHash: string, now: string): void {
     this.connection.sqlite
       .prepare(
-        "UPDATE session SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL",
+        "UPDATE session SET revoked_at=? WHERE (token_hash=? OR previous_token_hash=?) AND revoked_at IS NULL",
       )
-      .run(now, tokenHash);
+      .run(now, tokenHash, tokenHash);
+  }
+
+  deleteOwnerGraph(ownerId: string): boolean {
+    return this.connection.deleteOwnerGraph(ownerId);
   }
 
   completeOnboarding(

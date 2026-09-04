@@ -17,11 +17,15 @@ CREATE TABLE credential (
 CREATE TABLE session (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL UNIQUE, csrf_hash TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  previous_token_hash TEXT, previous_token_expires_at TEXT,
+  previous_token_uses_remaining INTEGER NOT NULL DEFAULT 0 CHECK (previous_token_uses_remaining BETWEEN 0 AND 8),
+  csrf_hash TEXT NOT NULL,
   created_at TEXT NOT NULL, last_used_at TEXT NOT NULL,
   idle_expires_at TEXT NOT NULL, absolute_expires_at TEXT NOT NULL, revoked_at TEXT
 );
 CREATE INDEX session_owner_idx ON session(owner_id);
+CREATE INDEX session_previous_token_idx ON session(previous_token_hash);
 
 CREATE TABLE character_aspect (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
@@ -143,6 +147,9 @@ BEGIN SELECT RAISE(ABORT, 'quest_link_required'); END;
 CREATE TRIGGER quest_accepted_snapshot_update BEFORE UPDATE OF owner_id,local_date,title,done_condition,reason,size,source,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at ON quest
 WHEN OLD.status='accepted'
 BEGIN SELECT RAISE(ABORT, 'quest_accepted_snapshot_immutable'); END;
+CREATE TRIGGER quest_accepted_delete BEFORE DELETE ON quest
+WHEN OLD.status='accepted' AND lifemaxing_owner_delete_allowed()!=1
+BEGIN SELECT RAISE(ABORT, 'quest_accepted_snapshot_immutable'); END;
 CREATE TABLE quest_aspect (
   owner_id TEXT NOT NULL, quest_id TEXT NOT NULL, aspect_id TEXT NOT NULL,
   PRIMARY KEY(quest_id,aspect_id),
@@ -156,7 +163,7 @@ CREATE TRIGGER quest_aspect_immutable_update BEFORE UPDATE ON quest_aspect
 WHEN EXISTS (SELECT 1 FROM quest WHERE id=OLD.quest_id AND owner_id=OLD.owner_id AND status IN ('accepted','completed','attempted','dropped'))
 BEGIN SELECT RAISE(ABORT,'quest_aspect_immutable'); END;
 CREATE TRIGGER quest_aspect_immutable_delete BEFORE DELETE ON quest_aspect
-WHEN EXISTS (SELECT 1 FROM quest WHERE id=OLD.quest_id AND owner_id=OLD.owner_id AND status IN ('accepted','completed','attempted','dropped'))
+WHEN lifemaxing_owner_delete_allowed()!=1 AND EXISTS (SELECT 1 FROM quest WHERE id=OLD.quest_id AND owner_id=OLD.owner_id AND status IN ('accepted','completed','attempted','dropped'))
 BEGIN SELECT RAISE(ABORT,'quest_aspect_immutable'); END;
 CREATE TABLE quest_outcome (
   id TEXT PRIMARY KEY NOT NULL, quest_id TEXT NOT NULL UNIQUE, owner_id TEXT NOT NULL,
@@ -176,12 +183,13 @@ SELECT CASE WHEN changes()!=1 THEN RAISE(ABORT,'quest_not_resolvable') END; END;
 CREATE TRIGGER quest_outcome_immutable_update BEFORE UPDATE ON quest_outcome
 BEGIN SELECT RAISE(ABORT,'quest_outcome_immutable'); END;
 CREATE TRIGGER quest_outcome_immutable_delete BEFORE DELETE ON quest_outcome
+WHEN lifemaxing_owner_delete_allowed()!=1
 BEGIN SELECT RAISE(ABORT,'quest_outcome_immutable'); END;
 CREATE TRIGGER quest_terminal_update BEFORE UPDATE ON quest
 WHEN OLD.status IN ('completed','attempted','dropped')
 BEGIN SELECT RAISE(ABORT,'quest_terminal'); END;
 CREATE TRIGGER quest_terminal_delete BEFORE DELETE ON quest
-WHEN OLD.status IN ('completed','attempted','dropped')
+WHEN OLD.status IN ('completed','attempted','dropped') AND lifemaxing_owner_delete_allowed()!=1
 BEGIN SELECT RAISE(ABORT,'quest_terminal'); END;
 
 CREATE TABLE briefing (
@@ -219,7 +227,7 @@ WHEN NOT (
 )
 BEGIN SELECT RAISE(ABORT,'evidence_link_owner_mismatch'); END;
 CREATE TRIGGER evidence_link_immutable_update BEFORE UPDATE ON evidence_link BEGIN SELECT RAISE(ABORT,'evidence_link_immutable'); END;
-CREATE TRIGGER evidence_link_immutable_delete BEFORE DELETE ON evidence_link BEGIN SELECT RAISE(ABORT,'evidence_link_immutable'); END;
+CREATE TRIGGER evidence_link_immutable_delete BEFORE DELETE ON evidence_link WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'evidence_link_immutable'); END;
 CREATE TABLE xp_ledger (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   aspect_id TEXT NOT NULL, evidence_id TEXT NOT NULL, points INTEGER NOT NULL CHECK(points BETWEEN 1 AND 3),
@@ -229,9 +237,9 @@ CREATE TABLE xp_ledger (
   UNIQUE(owner_id,evidence_id,aspect_id,rule_key)
 );
 CREATE TRIGGER evidence_immutable_update BEFORE UPDATE ON evidence BEGIN SELECT RAISE(ABORT,'evidence_immutable'); END;
-CREATE TRIGGER evidence_immutable_delete BEFORE DELETE ON evidence BEGIN SELECT RAISE(ABORT,'evidence_immutable'); END;
+CREATE TRIGGER evidence_immutable_delete BEFORE DELETE ON evidence WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'evidence_immutable'); END;
 CREATE TRIGGER xp_ledger_immutable_update BEFORE UPDATE ON xp_ledger BEGIN SELECT RAISE(ABORT,'xp_ledger_immutable'); END;
-CREATE TRIGGER xp_ledger_immutable_delete BEFORE DELETE ON xp_ledger BEGIN SELECT RAISE(ABORT,'xp_ledger_immutable'); END;
+CREATE TRIGGER xp_ledger_immutable_delete BEFORE DELETE ON xp_ledger WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'xp_ledger_immutable'); END;
 CREATE TABLE observation (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   type TEXT NOT NULL, value_type TEXT NOT NULL CHECK(value_type IN ('number','string','boolean')),
@@ -248,4 +256,4 @@ CREATE TABLE observation (
   UNIQUE(owner_id,provider,connection_id,source_record_id,source_revision)
 );
 CREATE TRIGGER observation_immutable_update BEFORE UPDATE ON observation BEGIN SELECT RAISE(ABORT,'observation_immutable'); END;
-CREATE TRIGGER observation_immutable_delete BEFORE DELETE ON observation BEGIN SELECT RAISE(ABORT,'observation_immutable'); END;
+CREATE TRIGGER observation_immutable_delete BEFORE DELETE ON observation WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'observation_immutable'); END;

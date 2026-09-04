@@ -31,7 +31,7 @@ corepack pnpm backup -- /private/path/lifemaxing-backup.sqlite
 corepack pnpm restore:check -- /private/path/lifemaxing-backup.sqlite
 ```
 
-`restore:check` opens the candidate read-only, runs SQLite `integrity_check`, and requires checksum-aware migration metadata. Migration history is fail-closed: an edited migration or an already-applied legacy migration without a recorded checksum must be recovered from a verified backup or recreated; it is never silently stamped. Keep the source and backup on encrypted storage with restricted parent-directory access.
+`restore:check` opens the candidate read-only, runs SQLite `integrity_check`, and requires the exact expected migration names and SHA-256 checksums in non-mutating mode. Migration history is fail-closed: an edited migration or an already-applied legacy migration without a recorded checksum must be recovered from a verified backup or recreated; it is never silently stamped. Keep the source and backup on encrypted storage with restricted parent-directory access.
 
 ## Checks
 
@@ -39,7 +39,9 @@ corepack pnpm restore:check -- /private/path/lifemaxing-backup.sqlite
 corepack pnpm verify
 ```
 
-The suite invokes the real backup/restore-check CLIs and covers migration checksums, owner-safe joins, setup takeover defenses, session rotation/cookies/expiry/rate limiting/origin checks, streamed body limits, onboarding rollback, immutable planning/progression records, timezone boundaries, deterministic briefings, dependency direction, SQL/Drizzle alignment, and the hard-disabled AI posture.
+The session policy permits up to eight in-flight uses of the immediately previous token within 10 seconds; those responses never emit a replacement cookie. Login backoff is source-scoped and retains at most 1,024 source buckets. When deploying behind TLS termination, configure the proxy to strip and replace `X-Real-IP` and `X-Forwarded-For`; never pass client-supplied values through. Missing or malformed source values share the direct-client bucket.
+
+The suite invokes the real backup/restore-check CLIs and covers migration checksums, owner-safe joins, setup takeover defenses, session rotation/cookies/expiry/rate limiting/origin checks, streamed body limits, onboarding rollback, immutable planning/progression records, guarded owner-wide hard deletion, timezone boundaries, deterministic briefings, dependency direction, SQL/Drizzle alignment, and the hard-disabled AI posture.
 
 ## Scope
 

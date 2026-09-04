@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import type { ZodType } from "zod";
@@ -88,6 +90,17 @@ export async function parseJson<T>(
 
 export function sameOrigin(request: NextRequest, appOrigin: string): boolean {
   return request.headers.get("origin") === appOrigin;
+}
+
+export function loginRateLimitKey(request: NextRequest): string {
+  const forwarded = request.headers
+    .get("x-forwarded-for")
+    ?.split(",")[0]
+    ?.trim();
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  const candidate = realIp || forwarded;
+  const source = candidate && isIP(candidate) ? candidate : "direct-client";
+  return createHash("sha256").update(source).digest("hex");
 }
 
 export function sessionToken(request: NextRequest): string | undefined {

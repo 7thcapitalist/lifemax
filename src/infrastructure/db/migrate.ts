@@ -3,6 +3,57 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseConnection } from "./client";
 
+function expectedMigrations(migrationsDirectory: string) {
+  return fs
+    .readdirSync(migrationsDirectory)
+    .filter((name) => /^\d+.*\.sql$/.test(name))
+    .sort()
+    .map((name) => {
+      const sql = fs.readFileSync(path.join(migrationsDirectory, name), "utf8");
+      return {
+        name,
+        sql,
+        checksum: createHash("sha256").update(sql).digest("hex"),
+      };
+    });
+}
+
+export function validateMigrationHistory(
+  connection: Pick<DatabaseConnection, "sqlite">,
+  migrationsDirectory: string,
+): void {
+  const table = connection.sqlite
+    .prepare(
+      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='__lifemaxing_migrations'",
+    )
+    .get();
+  if (!table) throw new Error("MIGRATION_HISTORY_MISSING");
+  const columns = connection.sqlite
+    .prepare("PRAGMA table_info(__lifemaxing_migrations)")
+    .all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "checksum"))
+    throw new Error("MIGRATION_CHECKSUM_COLUMN_MISSING");
+  const expected = expectedMigrations(migrationsDirectory);
+  const actual = connection.sqlite
+    .prepare("SELECT name, checksum FROM __lifemaxing_migrations ORDER BY name")
+    .all() as Array<{ name: string; checksum: string | null }>;
+  const expectedByName = new Map(
+    expected.map((migration) => [migration.name, migration]),
+  );
+  for (const row of actual) {
+    const migration = expectedByName.get(row.name);
+    if (!migration) throw new Error("MIGRATION_UNEXPECTED: " + row.name);
+    if (!row.checksum)
+      throw new Error("MIGRATION_CHECKSUM_MISSING: " + row.name);
+    if (row.checksum !== migration.checksum)
+      throw new Error("MIGRATION_CHECKSUM_MISMATCH: " + row.name);
+  }
+  const actualNames = new Set(actual.map((row) => row.name));
+  for (const migration of expected)
+    if (!actualNames.has(migration.name))
+      throw new Error("MIGRATION_NOT_APPLIED: " + migration.name);
+}
+
 export function runMigrations(
   connection: DatabaseConnection,
   migrationsDirectory: string,

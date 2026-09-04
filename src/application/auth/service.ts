@@ -10,6 +10,8 @@ import { newId } from "@/domain/shared/id";
 
 const IDLE_MS = 30 * 60 * 1000;
 const ABSOLUTE_MS = 12 * 60 * 60 * 1000;
+export const PREVIOUS_TOKEN_GRACE_MS = 10_000;
+export const PREVIOUS_TOKEN_MAX_USES = 8;
 const digest = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const safeDigestEqual = (left: string, right: string) =>
@@ -91,7 +93,11 @@ export class AuthService {
       !row ||
       row.revokedAt ||
       new Date(row.idleExpiresAt) <= now ||
-      new Date(row.absoluteExpiresAt) <= now
+      new Date(row.absoluteExpiresAt) <= now ||
+      (row.tokenMatch === "previous" &&
+        (!row.previousTokenExpiresAt ||
+          new Date(row.previousTokenExpiresAt) <= now ||
+          row.previousTokenUsesRemaining <= 0))
     )
       return null;
     if (
@@ -106,6 +112,18 @@ export class AuthService {
       ),
     ).toISOString();
     if (!rotate) return { ownerId: row.ownerId };
+    if (row.tokenMatch === "previous") {
+      if (
+        !this.sessions.usePreviousToken(
+          row.id,
+          tokenHash,
+          now.toISOString(),
+          idleExpiresAt,
+        )
+      )
+        return null;
+      return { ownerId: row.ownerId };
+    }
     const rotatedToken = randomBytes(32).toString("base64url");
     if (
       !this.sessions.rotate(
@@ -114,9 +132,27 @@ export class AuthService {
         digest(rotatedToken),
         now.toISOString(),
         idleExpiresAt,
+        new Date(now.getTime() + PREVIOUS_TOKEN_GRACE_MS).toISOString(),
+        PREVIOUS_TOKEN_MAX_USES,
       )
-    )
-      return null;
+    ) {
+      const raced = this.sessions.findByTokenHash(tokenHash);
+      if (
+        !raced ||
+        raced.tokenMatch !== "previous" ||
+        raced.revokedAt ||
+        new Date(raced.idleExpiresAt) <= now ||
+        new Date(raced.absoluteExpiresAt) <= now ||
+        !this.sessions.usePreviousToken(
+          raced.id,
+          tokenHash,
+          now.toISOString(),
+          idleExpiresAt,
+        )
+      )
+        return null;
+      return { ownerId: raced.ownerId };
+    }
     return { ownerId: row.ownerId, rotatedToken };
   }
 

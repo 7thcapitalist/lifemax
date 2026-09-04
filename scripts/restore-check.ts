@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { validateMigrationHistory } from "@/infrastructure/db/migrate";
 
 function main(): void {
   const args = process.argv.slice(2).filter((argument) => argument !== "--");
@@ -20,11 +21,7 @@ function main(): void {
     const result = database.pragma("integrity_check", { simple: true });
     if (result !== "ok")
       throw new Error("Restore candidate failed integrity_check.");
-    database
-      .prepare(
-        "SELECT checksum FROM __lifemaxing_migrations ORDER BY name LIMIT 1",
-      )
-      .get();
+    validateMigrationHistory({ sqlite: database }, path.resolve("migrations"));
   } finally {
     database.close();
   }

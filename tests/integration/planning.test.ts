@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SqliteRepositories } from "@/infrastructure/db/repositories";
 import { migratedDatabase } from "../helpers";
 
 const NOW = "2026-09-03T12:00:00Z";
@@ -100,6 +101,38 @@ describe("planning database invariants", () => {
     sqlite.close();
   });
 
+  it("rejects accepted quest deletion for every valid link shape", () => {
+    const { sqlite } = migratedDatabase();
+    seedOwnerAndAspect(sqlite);
+    sqlite
+      .prepare(
+        "INSERT INTO chapter(id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at) VALUES ('c1','o1','Chapter','Intent','2026-09-01','2026-10-15','active',?,?)",
+      )
+      .run(NOW, NOW);
+    sqlite
+      .prepare(
+        "INSERT INTO milestone(id,owner_id,chapter_id,title,done_condition,status,sort_order,created_at,updated_at) VALUES ('m1','o1','c1','Milestone','Done','active',0,?,?)",
+      )
+      .run(NOW, NOW);
+    for (const id of ["direct", "milestone", "dual"]) propose(sqlite, id);
+    sqlite.prepare("DELETE FROM quest_aspect WHERE quest_id='milestone'").run();
+    sqlite
+      .prepare(
+        "UPDATE quest SET milestone_id='m1' WHERE id IN ('milestone','dual')",
+      )
+      .run();
+    accept(sqlite, "direct", "main");
+    accept(sqlite, "milestone", "side");
+    accept(sqlite, "dual", "side");
+
+    for (const id of ["direct", "milestone", "dual"])
+      expect(() =>
+        sqlite.prepare("DELETE FROM quest WHERE id=?").run(id),
+      ).toThrow(/quest_accepted_snapshot_immutable/);
+    expect(sqlite.prepare("SELECT count(*) FROM quest").pluck().get()).toBe(3);
+    sqlite.close();
+  });
+
   it("makes outcomes single, immutable, consistent, and atomic on rollback", () => {
     const { sqlite } = migratedDatabase();
     seedOwnerAndAspect(sqlite);
@@ -170,6 +203,57 @@ describe("planning database invariants", () => {
         .pluck()
         .get(),
     ).toBe(0);
+    sqlite.close();
+  });
+
+  it("permits owner-wide hard deletion only inside the guarded privacy context", () => {
+    const connection = migratedDatabase();
+    const { sqlite } = connection;
+    const repositories = new SqliteRepositories(connection);
+    seedOwnerAndAspect(sqlite);
+    propose(sqlite, "accepted");
+    propose(sqlite, "terminal", "2026-09-04");
+    accept(sqlite, "accepted", "main");
+    accept(sqlite, "terminal", "main");
+    sqlite
+      .prepare(
+        "INSERT INTO quest_outcome(id,quest_id,owner_id,outcome,occurred_at,accepted_size) VALUES ('out','terminal','o1','completed',?,'small')",
+      )
+      .run(NOW);
+    sqlite
+      .prepare(
+        "INSERT INTO evidence(id,owner_id,kind,factual_text,local_date,provenance_type,provenance_id,source_snapshot,created_at) VALUES ('e1','o1','quest_completion','Synthetic evidence','2026-09-04','quest','terminal','{}',?)",
+      )
+      .run(NOW);
+    sqlite
+      .prepare(
+        "INSERT INTO evidence_link(evidence_id,owner_id,entity_type,entity_id) VALUES ('e1','o1','aspect','a1')",
+      )
+      .run();
+    sqlite
+      .prepare(
+        "INSERT INTO xp_ledger(id,owner_id,aspect_id,evidence_id,points,rule_key,reason,awarded_at) VALUES ('xp1','o1','a1','e1',1,'completion','Synthetic award',?)",
+      )
+      .run(NOW);
+
+    expect(() =>
+      sqlite.prepare("DELETE FROM owner WHERE id='o1'").run(),
+    ).toThrow(/immutable|quest_/);
+    expect(repositories.privacy.deleteOwnerGraph("o1")).toBe(true);
+    for (const table of [
+      "owner",
+      "quest",
+      "quest_outcome",
+      "evidence",
+      "evidence_link",
+      "xp_ledger",
+    ])
+      expect(
+        sqlite
+          .prepare("SELECT count(*) FROM " + table)
+          .pluck()
+          .get(),
+      ).toBe(0);
     sqlite.close();
   });
 

@@ -11,9 +11,29 @@ export function openDatabase(databasePath: string) {
     fs.chmodSync(directory, 0o700);
   }
   const sqlite = new Database(databasePath);
+  let ownerDeleteAllowed = false;
+  sqlite.function("lifemaxing_owner_delete_allowed", () =>
+    ownerDeleteAllowed ? 1 : 0,
+  );
   sqlite.pragma("foreign_keys = ON");
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("busy_timeout = 5000");
-  return { sqlite, db: drizzle(sqlite, { schema }) };
+  return {
+    sqlite,
+    db: drizzle(sqlite, { schema }),
+    deleteOwnerGraph(ownerId: string): boolean {
+      if (ownerDeleteAllowed) throw new Error("OWNER_DELETE_ALREADY_ACTIVE");
+      ownerDeleteAllowed = true;
+      try {
+        return sqlite.transaction(
+          () =>
+            sqlite.prepare("DELETE FROM owner WHERE id=?").run(ownerId)
+              .changes === 1,
+        )();
+      } finally {
+        ownerDeleteAllowed = false;
+      }
+    },
+  };
 }
 export type DatabaseConnection = ReturnType<typeof openDatabase>;

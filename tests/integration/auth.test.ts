@@ -40,7 +40,7 @@ describe("one-owner authentication and sessions", () => {
     const authenticated = auth.authenticate(session!.token, session!.csrfToken);
     expect(authenticated?.ownerId).toBe(session!.ownerId);
     expect(authenticated?.rotatedToken).toBeTruthy();
-    expect(auth.authenticate(session!.token)).toBeNull();
+    expect(auth.authenticate(session!.token)?.ownerId).toBe(session!.ownerId);
     const renewed = auth.authenticate(authenticated!.rotatedToken);
     expect(renewed?.ownerId).toBe(session!.ownerId);
     auth.revoke(renewed!.rotatedToken);

@@ -53,6 +53,11 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => owners.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull().unique(),
+    previousTokenHash: text("previous_token_hash"),
+    previousTokenExpiresAt: text("previous_token_expires_at"),
+    previousTokenUsesRemaining: integer("previous_token_uses_remaining")
+      .notNull()
+      .default(0),
     csrfHash: text("csrf_hash").notNull(),
     createdAt: text("created_at").notNull(),
     lastUsedAt: text("last_used_at").notNull(),
@@ -60,7 +65,14 @@ export const sessions = sqliteTable(
     absoluteExpiresAt: text("absolute_expires_at").notNull(),
     revokedAt: text("revoked_at"),
   },
-  (table) => [index("session_owner_idx").on(table.ownerId)],
+  (table) => [
+    index("session_owner_idx").on(table.ownerId),
+    index("session_previous_token_idx").on(table.previousTokenHash),
+    check(
+      "session_previous_token_uses_check",
+      sql`${table.previousTokenUsesRemaining} BETWEEN 0 AND 8`,
+    ),
+  ],
 );
 
 export const characterAspects = sqliteTable(

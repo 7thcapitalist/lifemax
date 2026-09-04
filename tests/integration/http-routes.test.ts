@@ -107,11 +107,18 @@ async function createOwner(auth: AuthService): Promise<void> {
   });
 }
 
-async function loginRequest(password = PASSWORD): Promise<Response> {
+async function loginRequest(
+  password = PASSWORD,
+  source = "192.0.2.10",
+): Promise<Response> {
   return login(
     request("/api/v1/auth/session", {
       method: "POST",
-      headers: { origin: ORIGIN, "content-type": "application/json" },
+      headers: {
+        origin: ORIGIN,
+        "content-type": "application/json",
+        "x-forwarded-for": source,
+      },
       body: JSON.stringify({ password }),
     }),
   );
@@ -196,7 +203,7 @@ describe("HTTP security boundaries", () => {
     expect(active.repositories.owners.count()).toBe(1);
   });
 
-  it("sets hardened cookies, rotates on use, rejects replay, and revokes", async () => {
+  it("sets hardened cookies, permits bounded parallel use, expires replay, and revokes", async () => {
     active = installRuntime();
     await createOwner(active.auth);
     const signedIn = await loginRequest();
@@ -209,23 +216,76 @@ describe("HTTP security boundaries", () => {
     const csrf = ((await signedIn.json()) as { csrfToken: string }).csrfToken;
     const token = cookieValue(signedIn);
 
-    const first = await bootstrap(
-      request("/api/v1/bootstrap", {
-        headers: { cookie: `lifemaxing_session=${token}` },
-      }),
+    const parallel = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        bootstrap(
+          request("/api/v1/bootstrap", {
+            headers: { cookie: "lifemaxing_session=" + token },
+          }),
+        ),
+      ),
     );
-    expect(first.status).toBe(200);
-    expect(
-      ((await first.json()) as { owner: { setupCompleted: boolean } }).owner
-        .setupCompleted,
-    ).toBe(false);
-    const rotated = cookieValue(first);
+    expect(parallel.map((response) => response.status)).toEqual([
+      200, 200, 200, 200,
+    ]);
+    const rotatingResponses = parallel.filter((response) =>
+      response.headers.get("set-cookie")?.includes("lifemaxing_session="),
+    );
+    expect(rotatingResponses).toHaveLength(1);
+    const rotated = cookieValue(rotatingResponses[0]!);
     expect(rotated).not.toBe(token);
+    expect(
+      (
+        (await parallel[3]!.json()) as {
+          owner: { setupCompleted: boolean };
+        }
+      ).owner.setupCompleted,
+    ).toBe(false);
+
+    // A late response authenticated by the previous token carries no stale cookie,
+    // so applying responses out of order cannot overwrite the current token.
+    expect(
+      parallel
+        .filter((response) => response !== rotatingResponses[0])
+        .every((response) => response.headers.get("set-cookie") === null),
+    ).toBe(true);
+    for (let use = 0; use < 5; use += 1)
+      expect(
+        (
+          await bootstrap(
+            request("/api/v1/bootstrap", {
+              headers: { cookie: "lifemaxing_session=" + token },
+            }),
+          )
+        ).status,
+      ).toBe(200);
     expect(
       (
         await bootstrap(
           request("/api/v1/bootstrap", {
-            headers: { cookie: `lifemaxing_session=${token}` },
+            headers: { cookie: "lifemaxing_session=" + token },
+          }),
+        )
+      ).status,
+    ).toBe(401);
+
+    const expiringLogin = await loginRequest();
+    const expiringToken = cookieValue(expiringLogin);
+    expect(
+      (
+        await bootstrap(
+          request("/api/v1/bootstrap", {
+            headers: { cookie: "lifemaxing_session=" + expiringToken },
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    (active.clock as FixedClock).set(new Date("2026-09-03T12:00:10.001Z"));
+    expect(
+      (
+        await bootstrap(
+          request("/api/v1/bootstrap", {
+            headers: { cookie: "lifemaxing_session=" + expiringToken },
           }),
         )
       ).status,
@@ -331,14 +391,27 @@ describe("HTTP security boundaries", () => {
     ).toBe(401);
   });
 
-  it("rate limits failures and clears the limiter on success", async () => {
+  it("rate limits by source without letting one source lock out the owner", async () => {
     active = installRuntime();
     await createOwner(active.auth);
     expect((await loginRequest("wrong-value")).status).toBe(401);
     expect((await loginRequest("wrong-value")).status).toBe(429);
     (active.clock as FixedClock).set(new Date("2026-09-03T12:00:00.500Z"));
-    expect((await loginRequest()).status).toBe(200);
+    expect((await loginRequest(PASSWORD, "192.0.2.11")).status).toBe(200);
     expect((await loginRequest("wrong-value")).status).toBe(401);
+  });
+
+  it("bounds source limiter state and collapses malformed forwarding values", async () => {
+    active = installRuntime();
+    await createOwner(active.auth);
+    active.loginLimiter = new LoginRateLimiter(active.clock, 2);
+    expect((await loginRequest("wrong-value", "192.0.2.20")).status).toBe(401);
+    expect((await loginRequest("wrong-value", "192.0.2.21")).status).toBe(401);
+    expect((await loginRequest("wrong-value", "192.0.2.22")).status).toBe(401);
+    expect((await loginRequest(PASSWORD, "192.0.2.20")).status).toBe(200);
+
+    expect((await loginRequest("wrong-value", "not-an-ip")).status).toBe(401);
+    expect((await loginRequest(PASSWORD, "also-not-an-ip")).status).toBe(429);
   });
 
   it("enforces actual streamed bytes with absent or false Content-Length", async () => {

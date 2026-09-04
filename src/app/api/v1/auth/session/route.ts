@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import {
   bodyErrorResponse,
   errorResponse,
+  loginRateLimitKey,
   parseJson,
   RequestBodyError,
   requireSession,
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   const app = getRuntime();
   if (!sameOrigin(request, app.config.APP_ORIGIN))
     return errorResponse(403, "ORIGIN", "Request origin is not allowed.");
-  const key = "owner-login";
+  const key = loginRateLimitKey(request);
   if (!app.loginLimiter.canAttempt(key))
     return errorResponse(429, "RATE_LIMITED", "Try again later.");
   try {
