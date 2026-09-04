@@ -20,7 +20,10 @@
     "test:architecture": "vitest run --project architecture",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migration-check": "vitest run --project integration tests/integration/migrations.test.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore:check": "tsx scripts/restore-check.ts",
     "backup:check": "vitest run --project integration tests/integration/backup.test.ts",
+    "audit:prod": "corepack pnpm audit --prod --audit-level high",
     "verify": "prettier --check . && eslint . --max-warnings=0 && tsc --noEmit && vitest run --project unit && vitest run --project integration && vitest run --project architecture && NEXT_TELEMETRY_DISABLED=1 next build"
   },
   "dependencies": {

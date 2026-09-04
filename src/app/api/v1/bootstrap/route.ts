@@ -1,38 +1,24 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { errorResponse, requireSession } from "@/application/http";
-import { IntlCalendarService } from "@/infrastructure/clock/system";
-import { owners } from "@/infrastructure/db/schema";
+import {
+  applyRotatedSession,
+  errorResponse,
+  requireSession,
+} from "@/app/api/http";
 import { runtime as getRuntime } from "@/infrastructure/runtime";
 
 export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
-  const auth = requireSession(request);
+  const app = getRuntime();
+  const auth = requireSession(request, app.auth);
   if (!auth)
     return errorResponse(401, "UNAUTHENTICATED", "Authentication required.");
-  const owner = getRuntime()
-    .connection.db.select({
-      id: owners.id,
-      displayName: owners.displayName,
-      timezone: owners.timezone,
-      becomingStatement: owners.becomingStatement,
-      setupCompleted: owners.setupCompleted,
-      version: owners.version,
-    })
-    .from(owners)
-    .where(eq(owners.id, auth.ownerId))
-    .get();
-  if (!owner)
+  const result = app.bootstrap.get(auth.ownerId);
+  if (!result)
     return errorResponse(401, "UNAUTHENTICATED", "Authentication required.");
-  const localDate = new IntlCalendarService().localDate(
-    getRuntime().clock.now(),
-    owner.timezone,
+  return applyRotatedSession(
+    NextResponse.json(result),
+    auth,
+    app.config.APP_ORIGIN,
   );
-  return NextResponse.json({
-    owner,
-    localDate,
-    aiMode: "disabled",
-    navigation: ["today", "character", "chronicle"],
-  });
 }

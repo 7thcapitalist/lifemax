@@ -5,6 +5,7 @@ export NEXT_TELEMETRY_DISABLED=1
 : "${HOST:=127.0.0.1}"
 : "${PORT:=3000}"
 : "${DATABASE_PATH:=./data/lifemaxing.sqlite}"
+: "${SETUP_MODE:=disabled}"
 : "${AI_MODE:=disabled}"
 
 if [ "$AI_MODE" != "disabled" ]; then
@@ -14,5 +15,5 @@ fi
 
 mkdir -p "$(dirname "$DATABASE_PATH")"
 chmod 700 "$(dirname "$DATABASE_PATH")"
-pnpm db:migrate
-exec pnpm next start -H "$HOST" -p "$PORT"
+corepack pnpm db:migrate
+exec corepack pnpm next start -H "$HOST" -p "$PORT"

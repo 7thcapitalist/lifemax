@@ -1,27 +1,44 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { errorResponse, parseJson, sameOrigin } from "@/application/http";
+import {
+  bodyErrorResponse,
+  errorResponse,
+  parseJson,
+  RequestBodyError,
+  sameOrigin,
+} from "@/app/api/http";
 import { setupOwnerSchema } from "@/contracts/http";
 import { runtime as getRuntime } from "@/infrastructure/runtime";
 
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
+  const app = getRuntime();
+  const forwarded = [
+    "forwarded",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "via",
+  ].some((header) => request.headers.has(header));
   if (
-    !["127.0.0.1", "localhost"].includes(request.nextUrl.hostname) ||
-    !sameOrigin(request)
+    app.config.SETUP_MODE !== "local" ||
+    forwarded ||
+    !["127.0.0.1", "localhost", "[::1]"].includes(request.nextUrl.hostname) ||
+    !sameOrigin(request, app.config.APP_ORIGIN)
   ) {
     return errorResponse(
       403,
       "SETUP_LOCAL_ONLY",
-      "Owner setup is available only from the configured localhost origin.",
+      "Owner setup requires an explicitly enabled local provisioning window.",
     );
   }
   try {
     const input = await parseJson(request, setupOwnerSchema);
-    const result = await getRuntime().auth.setupOwner(input);
+    const result = await app.auth.setupOwner(input);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof RequestBodyError) return bodyErrorResponse(error);
     if (error instanceof ZodError)
       return errorResponse(
         422,

@@ -1,65 +1,71 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { LoginRateLimiter } from "@/application/auth/rate-limit";
 import {
+  bodyErrorResponse,
   errorResponse,
   parseJson,
-  sameOrigin,
+  RequestBodyError,
   requireSession,
+  sameOrigin,
+  sessionCookieOptions,
   sessionToken,
-} from "@/application/http";
+} from "@/app/api/http";
 import { loginSchema } from "@/contracts/http";
 import { runtime as getRuntime } from "@/infrastructure/runtime";
 
 export const runtime = "nodejs";
-let limiter: LoginRateLimiter | undefined;
-function getLimiter(): LoginRateLimiter {
-  limiter ??= new LoginRateLimiter(getRuntime().clock);
-  return limiter;
-}
-const cookie = {
-  httpOnly: true,
-  sameSite: "strict" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: 12 * 60 * 60,
-};
 
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request))
+  const app = getRuntime();
+  if (!sameOrigin(request, app.config.APP_ORIGIN))
     return errorResponse(403, "ORIGIN", "Request origin is not allowed.");
   const key = "owner-login";
-  const limiter = getLimiter();
-  if (!limiter.canAttempt(key))
+  if (!app.loginLimiter.canAttempt(key))
     return errorResponse(429, "RATE_LIMITED", "Try again later.");
   try {
     const input = await parseJson(request, loginSchema);
-    const result = await getRuntime().auth.createSession(input.password);
+    const result = await app.auth.createSession(input.password);
     if (!result) {
-      limiter.recordFailure(key);
+      app.loginLimiter.recordFailure(key);
       return errorResponse(401, "AUTH_FAILED", "Invalid credentials.");
     }
-    limiter.clear(key);
+    app.loginLimiter.clear(key);
     const response = NextResponse.json({ csrfToken: result.csrfToken });
-    response.cookies.set("lifemaxing_session", result.token, cookie);
+    response.cookies.set(
+      "lifemaxing_session",
+      result.token,
+      sessionCookieOptions(app.config.APP_ORIGIN),
+    );
     return response;
   } catch (error) {
-    if (error instanceof ZodError)
+    if (error instanceof RequestBodyError) {
+      app.loginLimiter.recordFailure(key);
+      return bodyErrorResponse(error);
+    }
+    if (error instanceof ZodError) {
+      app.loginLimiter.recordFailure(key);
       return errorResponse(401, "AUTH_FAILED", "Invalid credentials.");
+    }
     return errorResponse(500, "AUTH_FAILED", "Authentication failed.");
   }
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!requireSession(request, true))
+  const app = getRuntime();
+  if (!sameOrigin(request, app.config.APP_ORIGIN))
+    return errorResponse(403, "ORIGIN", "Request origin is not allowed.");
+  if (!requireSession(request, app.auth, true, false))
     return errorResponse(
       401,
       "UNAUTHENTICATED",
       "Authentication and CSRF validation required.",
     );
-  getRuntime().auth.revoke(sessionToken(request));
+  app.auth.revoke(sessionToken(request));
   const response = new NextResponse(null, { status: 204 });
-  response.cookies.set("lifemaxing_session", "", { ...cookie, maxAge: 0 });
+  response.cookies.set("lifemaxing_session", "", {
+    ...sessionCookieOptions(app.config.APP_ORIGIN),
+    maxAge: 0,
+  });
   return response;
 }

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -78,7 +79,6 @@ export const characterAspects = sqliteTable(
     sortOrder: integer("sort_order").notNull(),
     archivedAt: text("archived_at"),
     level: integer("level").notNull().default(1),
-    currentXp: integer("current_xp").notNull().default(0),
     ...timestamps,
   },
   (table) => [unique("aspect_owner_id").on(table.ownerId, table.id)],
@@ -123,23 +123,31 @@ export const chapters = sqliteTable(
   ],
 );
 
-export const milestones = sqliteTable("milestone", {
-  id: text("id").primaryKey(),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => owners.id, { onDelete: "cascade" }),
-  chapterId: text("chapter_id")
-    .notNull()
-    .references(() => chapters.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  doneCondition: text("done_condition").notNull(),
-  status: text("status", {
-    enum: ["planned", "active", "completed", "replaced", "abandoned"],
-  }).notNull(),
-  targetDate: text("target_date"),
-  sortOrder: integer("sort_order").notNull(),
-  ...timestamps,
-});
+export const milestones = sqliteTable(
+  "milestone",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    chapterId: text("chapter_id").notNull(),
+    title: text("title").notNull(),
+    doneCondition: text("done_condition").notNull(),
+    status: text("status", {
+      enum: ["planned", "active", "completed", "replaced", "abandoned"],
+    }).notNull(),
+    targetDate: text("target_date"),
+    sortOrder: integer("sort_order").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    unique("milestone_owner_id").on(table.ownerId, table.id),
+    foreignKey({
+      columns: [table.ownerId, table.chapterId],
+      foreignColumns: [chapters.ownerId, chapters.id],
+    }).onDelete("cascade"),
+  ],
+);
 
 export const balanceGuardrails = sqliteTable("balance_guardrail", {
   id: text("id").primaryKey(),
@@ -193,7 +201,7 @@ export const quests = sqliteTable(
       ],
     }).notNull(),
     role: text("role", { enum: ["main", "side"] }),
-    milestoneId: text("milestone_id").references(() => milestones.id),
+    milestoneId: text("milestone_id"),
     lifeLived: integer("life_lived", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -207,27 +215,40 @@ export const quests = sqliteTable(
   (table) => [
     unique("quest_owner_id").on(table.ownerId, table.id),
     index("quest_owner_date_idx").on(table.ownerId, table.localDate),
+    uniqueIndex("one_main_quest_per_date")
+      .on(table.ownerId, table.localDate)
+      .where(
+        sql`${table.status} IN ('accepted','completed','attempted','dropped') AND ${table.role} = 'main'`,
+      ),
+    foreignKey({
+      columns: [table.ownerId, table.milestoneId],
+      foreignColumns: [milestones.ownerId, milestones.id],
+    }),
   ],
 );
 
-export const questOutcomes = sqliteTable("quest_outcome", {
-  id: text("id").primaryKey(),
-  questId: text("quest_id")
-    .notNull()
-    .unique()
-    .references(() => quests.id, { onDelete: "cascade" }),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => owners.id, { onDelete: "cascade" }),
-  outcome: text("outcome", {
-    enum: ["completed", "attempted", "dropped"],
-  }).notNull(),
-  occurredAt: text("occurred_at").notNull(),
-  reflection: text("reflection"),
-  acceptedSize: text("accepted_size", {
-    enum: ["small", "standard", "major"],
-  }).notNull(),
-});
+export const questOutcomes = sqliteTable(
+  "quest_outcome",
+  {
+    id: text("id").primaryKey(),
+    questId: text("quest_id").notNull().unique(),
+    ownerId: text("owner_id").notNull(),
+    outcome: text("outcome", {
+      enum: ["completed", "attempted", "dropped"],
+    }).notNull(),
+    occurredAt: text("occurred_at").notNull(),
+    reflection: text("reflection"),
+    acceptedSize: text("accepted_size", {
+      enum: ["small", "standard", "major"],
+    }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.ownerId, table.questId],
+      foreignColumns: [quests.ownerId, quests.id],
+    }).onDelete("cascade"),
+  ],
+);
 
 export const briefings = sqliteTable(
   "briefing",
@@ -251,6 +272,7 @@ export const briefings = sqliteTable(
     }).notNull(),
   },
   (table) => [
+    unique("briefing_owner_id").on(table.ownerId, table.id),
     unique("briefing_idempotency").on(
       table.ownerId,
       table.localDate,
@@ -264,15 +286,21 @@ export const briefingSuggestions = sqliteTable(
   "briefing_suggestion",
   {
     id: text("id").primaryKey(),
-    briefingId: text("briefing_id")
-      .notNull()
-      .references(() => briefings.id, { onDelete: "cascade" }),
+    briefingId: text("briefing_id").notNull(),
     ownerId: text("owner_id").notNull(),
-    questId: text("quest_id").references(() => quests.id),
+    questId: text("quest_id"),
     role: text("role", { enum: ["main", "side"] }).notNull(),
     sortOrder: integer("sort_order").notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.ownerId, table.briefingId],
+      foreignColumns: [briefings.ownerId, briefings.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.questId],
+      foreignColumns: [quests.ownerId, quests.id],
+    }),
     unique("briefing_suggestion_order").on(
       table.briefingId,
       table.role,
@@ -281,21 +309,25 @@ export const briefingSuggestions = sqliteTable(
   ],
 );
 
-export const evidence = sqliteTable("evidence", {
-  id: text("id").primaryKey(),
-  ownerId: text("owner_id")
-    .notNull()
-    .references(() => owners.id, { onDelete: "cascade" }),
-  kind: text("kind").notNull(),
-  factualText: text("factual_text").notNull(),
-  localDate: text("local_date").notNull(),
-  occurredAt: text("occurred_at"),
-  provenanceType: text("provenance_type").notNull(),
-  provenanceId: text("provenance_id").notNull(),
-  confirmedAt: text("confirmed_at"),
-  sourceSnapshot: text("source_snapshot").notNull(),
-  createdAt: text("created_at").notNull(),
-});
+export const evidence = sqliteTable(
+  "evidence",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    factualText: text("factual_text").notNull(),
+    localDate: text("local_date").notNull(),
+    occurredAt: text("occurred_at"),
+    provenanceType: text("provenance_type").notNull(),
+    provenanceId: text("provenance_id").notNull(),
+    confirmedAt: text("confirmed_at"),
+    sourceSnapshot: text("source_snapshot").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [unique("evidence_owner_id").on(table.ownerId, table.id)],
+);
 
 export const observations = sqliteTable(
   "observation",
@@ -353,7 +385,17 @@ export const northStarAspects = sqliteTable(
     northStarId: text("north_star_id").notNull(),
     aspectId: text("aspect_id").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.northStarId, table.aspectId] })],
+  (table) => [
+    primaryKey({ columns: [table.northStarId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.northStarId],
+      foreignColumns: [northStars.ownerId, northStars.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }).onDelete("cascade"),
+  ],
 );
 export const chapterAspects = sqliteTable(
   "chapter_aspect",
@@ -363,7 +405,17 @@ export const chapterAspects = sqliteTable(
     aspectId: text("aspect_id").notNull(),
     emphasisNote: text("emphasis_note"),
   },
-  (table) => [primaryKey({ columns: [table.chapterId, table.aspectId] })],
+  (table) => [
+    primaryKey({ columns: [table.chapterId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.chapterId],
+      foreignColumns: [chapters.ownerId, chapters.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }).onDelete("cascade"),
+  ],
 );
 export const milestoneAspects = sqliteTable(
   "milestone_aspect",
@@ -372,7 +424,17 @@ export const milestoneAspects = sqliteTable(
     milestoneId: text("milestone_id").notNull(),
     aspectId: text("aspect_id").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.milestoneId, table.aspectId] })],
+  (table) => [
+    primaryKey({ columns: [table.milestoneId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.milestoneId],
+      foreignColumns: [milestones.ownerId, milestones.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }).onDelete("cascade"),
+  ],
 );
 export const questAspects = sqliteTable(
   "quest_aspect",
@@ -381,5 +443,69 @@ export const questAspects = sqliteTable(
     questId: text("quest_id").notNull(),
     aspectId: text("aspect_id").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.questId, table.aspectId] })],
+  (table) => [
+    primaryKey({ columns: [table.questId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.questId],
+      foreignColumns: [quests.ownerId, quests.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const evidenceLinks = sqliteTable(
+  "evidence_link",
+  {
+    evidenceId: text("evidence_id").notNull(),
+    ownerId: text("owner_id").notNull(),
+    entityType: text("entity_type", {
+      enum: ["aspect", "milestone", "quest"],
+    }).notNull(),
+    entityId: text("entity_id").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.evidenceId, table.entityType, table.entityId],
+    }),
+    foreignKey({
+      columns: [table.ownerId, table.evidenceId],
+      foreignColumns: [evidence.ownerId, evidence.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const xpLedger = sqliteTable(
+  "xp_ledger",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    aspectId: text("aspect_id").notNull(),
+    evidenceId: text("evidence_id").notNull(),
+    points: integer("points").notNull(),
+    ruleKey: text("rule_key").notNull(),
+    reason: text("reason").notNull(),
+    awardedAt: text("awarded_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }),
+    foreignKey({
+      columns: [table.ownerId, table.evidenceId],
+      foreignColumns: [evidence.ownerId, evidence.id],
+    }),
+    unique("xp_ledger_award").on(
+      table.ownerId,
+      table.evidenceId,
+      table.aspectId,
+      table.ruleKey,
+    ),
+    check("xp_ledger_points", sql`${table.points} BETWEEN 1 AND 3`),
+  ],
 );

@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { AuthService } from "@/application/auth/service";
+import { SqliteRepositories } from "@/infrastructure/db/repositories";
 import { FixedClock, migratedDatabase } from "../helpers";
 
 describe("one-owner authentication and sessions", () => {
   it("closes setup, hashes secrets, validates CSRF, expires, and revokes sessions", async () => {
     const connection = migratedDatabase();
     const clock = new FixedClock(new Date("2026-09-03T12:00:00Z"));
-    const auth = new AuthService(connection, clock);
+    const repositories = new SqliteRepositories(connection);
+    const auth = new AuthService(
+      repositories.owners,
+      repositories.sessions,
+      repositories.transactions,
+      clock,
+    );
     await auth.setupOwner({
       displayName: "Synthetic Owner",
       timezone: "UTC",
@@ -30,10 +37,13 @@ describe("one-owner authentication and sessions", () => {
       connection.sqlite.prepare("SELECT token_hash FROM session").pluck().get(),
     ).not.toBe(session!.token);
     expect(auth.authenticate(session!.token, "wrong-csrf")).toBeNull();
-    expect(auth.authenticate(session!.token, session!.csrfToken)).toEqual({
-      ownerId: session!.ownerId,
-    });
-    auth.revoke(session!.token);
+    const authenticated = auth.authenticate(session!.token, session!.csrfToken);
+    expect(authenticated?.ownerId).toBe(session!.ownerId);
+    expect(authenticated?.rotatedToken).toBeTruthy();
+    expect(auth.authenticate(session!.token)).toBeNull();
+    const renewed = auth.authenticate(authenticated!.rotatedToken);
+    expect(renewed?.ownerId).toBe(session!.ownerId);
+    auth.revoke(renewed!.rotatedToken);
     clock.set(new Date("2026-09-03T12:31:00Z"));
     expect(auth.authenticate(session!.token)).toBeNull();
     expect(auth.authenticate(session!.token)).toBeNull();

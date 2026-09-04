@@ -18,6 +18,22 @@ describe("module boundaries and no AI enablement", () => {
       .join("\n");
     expect(content).not.toMatch(/next\/|drizzle|process\.env|fetch\s*\(/);
   });
+  it("keeps application services behind ports and free of adapter dependencies", () => {
+    const content = files(path.resolve("src/application"))
+      .map((file) => fs.readFileSync(file, "utf8"))
+      .join("\n");
+    expect(content).not.toMatch(
+      /from\s+["'](?:@\/infrastructure|next\/|drizzle-orm)|process\.env|fetch\s*\(/,
+    );
+  });
+  it("keeps route handlers free of direct database adapter access", () => {
+    const content = files(path.resolve("src/app/api/v1"))
+      .map((file) => fs.readFileSync(file, "utf8"))
+      .join("\n");
+    expect(content).not.toMatch(
+      /drizzle-orm|infrastructure\/db\/(?:client|schema)|\.repositories\b|\.connection\b/,
+    );
+  });
   it("contains no external AI SDK, provider config, or enablement mode", () => {
     const manifests = [
       fs.readFileSync("package.json", "utf8"),

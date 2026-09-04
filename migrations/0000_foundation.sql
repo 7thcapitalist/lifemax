@@ -30,7 +30,6 @@ CREATE TABLE character_aspect (
   desired_identity TEXT NOT NULL CHECK (length(desired_identity) BETWEEN 1 AND 1000),
   emphasis TEXT NOT NULL CHECK (emphasis IN ('active','maintenance','dormant')),
   sort_order INTEGER NOT NULL, archived_at TEXT, level INTEGER NOT NULL DEFAULT 1 CHECK (level >= 1),
-  current_xp INTEGER NOT NULL DEFAULT 0 CHECK (current_xp >= 0),
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   UNIQUE(owner_id,id)
 );
@@ -115,23 +114,50 @@ CREATE TABLE quest (
   repeat_family_key TEXT, accepted_size TEXT CHECK (accepted_size IN ('small','standard','major')), accepted_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY(owner_id,milestone_id) REFERENCES milestone(owner_id,id),
-  CHECK ((status='accepted' AND accepted_size IS NOT NULL AND accepted_at IS NOT NULL AND role IS NOT NULL) OR status!='accepted'),
+  CHECK (
+    (status IN ('accepted','completed','attempted','dropped') AND accepted_size IS NOT NULL AND accepted_at IS NOT NULL AND role IS NOT NULL)
+    OR (status IN ('proposed','declined') AND accepted_size IS NULL AND accepted_at IS NULL AND role IS NULL)
+  ),
   UNIQUE(owner_id,id)
 );
 CREATE INDEX quest_owner_date_idx ON quest(owner_id,local_date);
-CREATE UNIQUE INDEX one_main_quest_per_date ON quest(owner_id,local_date) WHERE status='accepted' AND role='main';
-CREATE TRIGGER quest_accepted_insert BEFORE INSERT ON quest
-WHEN NEW.status='accepted' AND (SELECT count(*) FROM quest WHERE owner_id=NEW.owner_id AND local_date=NEW.local_date AND status='accepted') >= 3
+CREATE UNIQUE INDEX one_main_quest_per_date ON quest(owner_id,local_date) WHERE status IN ('accepted','completed','attempted','dropped') AND role='main';
+CREATE TRIGGER quest_initial_state BEFORE INSERT ON quest
+WHEN NEW.status!='proposed'
+BEGIN SELECT RAISE(ABORT, 'quest_initial_state'); END;
+CREATE TRIGGER quest_accepted_update BEFORE UPDATE OF owner_id,local_date,status ON quest
+WHEN NEW.status='accepted' AND (SELECT count(*) FROM quest WHERE owner_id=NEW.owner_id AND local_date=NEW.local_date AND status IN ('accepted','completed','attempted','dropped') AND id<>OLD.id) >= 3
 BEGIN SELECT RAISE(ABORT, 'quest_daily_limit'); END;
-CREATE TRIGGER quest_accepted_update BEFORE UPDATE OF status ON quest
-WHEN NEW.status='accepted' AND OLD.status!='accepted' AND (SELECT count(*) FROM quest WHERE owner_id=NEW.owner_id AND local_date=NEW.local_date AND status='accepted') >= 3
-BEGIN SELECT RAISE(ABORT, 'quest_daily_limit'); END;
+CREATE TRIGGER quest_transition BEFORE UPDATE OF status ON quest
+WHEN NOT (
+  NEW.status=OLD.status OR
+  (OLD.status='proposed' AND NEW.status IN ('accepted','declined')) OR
+  (OLD.status='accepted' AND NEW.status IN ('completed','attempted','dropped') AND EXISTS (
+    SELECT 1 FROM quest_outcome WHERE quest_id=OLD.id AND owner_id=OLD.owner_id AND outcome=NEW.status
+  ))
+)
+BEGIN SELECT RAISE(ABORT, 'quest_illegal_transition'); END;
+CREATE TRIGGER quest_accept_link BEFORE UPDATE OF status ON quest
+WHEN NEW.status='accepted' AND OLD.status!='accepted' AND NEW.milestone_id IS NULL AND NOT EXISTS (SELECT 1 FROM quest_aspect WHERE quest_id=OLD.id AND owner_id=OLD.owner_id)
+BEGIN SELECT RAISE(ABORT, 'quest_link_required'); END;
+CREATE TRIGGER quest_accepted_snapshot_update BEFORE UPDATE OF owner_id,local_date,title,done_condition,reason,size,source,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at ON quest
+WHEN OLD.status='accepted'
+BEGIN SELECT RAISE(ABORT, 'quest_accepted_snapshot_immutable'); END;
 CREATE TABLE quest_aspect (
   owner_id TEXT NOT NULL, quest_id TEXT NOT NULL, aspect_id TEXT NOT NULL,
   PRIMARY KEY(quest_id,aspect_id),
   FOREIGN KEY(owner_id,quest_id) REFERENCES quest(owner_id,id) ON DELETE CASCADE,
   FOREIGN KEY(owner_id,aspect_id) REFERENCES character_aspect(owner_id,id) ON DELETE CASCADE
 );
+CREATE TRIGGER quest_aspect_immutable_insert BEFORE INSERT ON quest_aspect
+WHEN EXISTS (SELECT 1 FROM quest WHERE id=NEW.quest_id AND owner_id=NEW.owner_id AND status IN ('accepted','completed','attempted','dropped'))
+BEGIN SELECT RAISE(ABORT,'quest_aspect_immutable'); END;
+CREATE TRIGGER quest_aspect_immutable_update BEFORE UPDATE ON quest_aspect
+WHEN EXISTS (SELECT 1 FROM quest WHERE id=OLD.quest_id AND owner_id=OLD.owner_id AND status IN ('accepted','completed','attempted','dropped'))
+BEGIN SELECT RAISE(ABORT,'quest_aspect_immutable'); END;
+CREATE TRIGGER quest_aspect_immutable_delete BEFORE DELETE ON quest_aspect
+WHEN EXISTS (SELECT 1 FROM quest WHERE id=OLD.quest_id AND owner_id=OLD.owner_id AND status IN ('accepted','completed','attempted','dropped'))
+BEGIN SELECT RAISE(ABORT,'quest_aspect_immutable'); END;
 CREATE TABLE quest_outcome (
   id TEXT PRIMARY KEY NOT NULL, quest_id TEXT NOT NULL UNIQUE, owner_id TEXT NOT NULL,
   outcome TEXT NOT NULL CHECK (outcome IN ('completed','attempted','dropped')),
@@ -139,10 +165,22 @@ CREATE TABLE quest_outcome (
   accepted_size TEXT NOT NULL CHECK (accepted_size IN ('small','standard','major')),
   FOREIGN KEY(owner_id,quest_id) REFERENCES quest(owner_id,id) ON DELETE CASCADE
 );
+CREATE TRIGGER quest_outcome_validate BEFORE INSERT ON quest_outcome
+WHEN NOT EXISTS (
+  SELECT 1 FROM quest WHERE id=NEW.quest_id AND owner_id=NEW.owner_id AND status='accepted' AND accepted_size=NEW.accepted_size
+)
+BEGIN SELECT RAISE(ABORT,'quest_not_resolvable'); END;
 CREATE TRIGGER quest_outcome_insert AFTER INSERT ON quest_outcome
 BEGIN UPDATE quest SET status=NEW.outcome, updated_at=NEW.occurred_at, version=version+1 WHERE id=NEW.quest_id AND owner_id=NEW.owner_id AND status='accepted';
 SELECT CASE WHEN changes()!=1 THEN RAISE(ABORT,'quest_not_resolvable') END; END;
-CREATE TRIGGER quest_terminal_update BEFORE UPDATE OF title,done_condition,reason,size,milestone_id ON quest
+CREATE TRIGGER quest_outcome_immutable_update BEFORE UPDATE ON quest_outcome
+BEGIN SELECT RAISE(ABORT,'quest_outcome_immutable'); END;
+CREATE TRIGGER quest_outcome_immutable_delete BEFORE DELETE ON quest_outcome
+BEGIN SELECT RAISE(ABORT,'quest_outcome_immutable'); END;
+CREATE TRIGGER quest_terminal_update BEFORE UPDATE ON quest
+WHEN OLD.status IN ('completed','attempted','dropped')
+BEGIN SELECT RAISE(ABORT,'quest_terminal'); END;
+CREATE TRIGGER quest_terminal_delete BEFORE DELETE ON quest
 WHEN OLD.status IN ('completed','attempted','dropped')
 BEGIN SELECT RAISE(ABORT,'quest_terminal'); END;
 
@@ -152,11 +190,13 @@ CREATE TABLE briefing (
   generator_kind TEXT NOT NULL CHECK (generator_kind='deterministic'),
   mirror TEXT NOT NULL, tradeoff TEXT, citations_json TEXT NOT NULL DEFAULT '[]',
   generated_at TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('draft','presented','accepted','superseded','failed')),
-  UNIQUE(owner_id,local_date,input_fingerprint,generator_version)
+  UNIQUE(owner_id,id), UNIQUE(owner_id,local_date,input_fingerprint,generator_version)
 );
 CREATE TABLE briefing_suggestion (
-  id TEXT PRIMARY KEY NOT NULL, briefing_id TEXT NOT NULL REFERENCES briefing(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY NOT NULL, briefing_id TEXT NOT NULL,
   owner_id TEXT NOT NULL, quest_id TEXT, role TEXT NOT NULL CHECK (role IN ('main','side')), sort_order INTEGER NOT NULL,
+  FOREIGN KEY(owner_id,briefing_id) REFERENCES briefing(owner_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(owner_id,quest_id) REFERENCES quest(owner_id,id),
   UNIQUE(briefing_id,role,sort_order)
 );
 CREATE TABLE evidence (
@@ -166,10 +206,20 @@ CREATE TABLE evidence (
   source_snapshot TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(owner_id,id)
 );
 CREATE TABLE evidence_link (
-  evidence_id TEXT NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
+  evidence_id TEXT NOT NULL,
   owner_id TEXT NOT NULL, entity_type TEXT NOT NULL CHECK(entity_type IN ('aspect','milestone','quest')), entity_id TEXT NOT NULL,
-  PRIMARY KEY(evidence_id,entity_type,entity_id)
+  PRIMARY KEY(evidence_id,entity_type,entity_id),
+  FOREIGN KEY(owner_id,evidence_id) REFERENCES evidence(owner_id,id) ON DELETE CASCADE
 );
+CREATE TRIGGER evidence_link_owner BEFORE INSERT ON evidence_link
+WHEN NOT (
+  (NEW.entity_type='aspect' AND EXISTS (SELECT 1 FROM character_aspect WHERE owner_id=NEW.owner_id AND id=NEW.entity_id)) OR
+  (NEW.entity_type='milestone' AND EXISTS (SELECT 1 FROM milestone WHERE owner_id=NEW.owner_id AND id=NEW.entity_id)) OR
+  (NEW.entity_type='quest' AND EXISTS (SELECT 1 FROM quest WHERE owner_id=NEW.owner_id AND id=NEW.entity_id))
+)
+BEGIN SELECT RAISE(ABORT,'evidence_link_owner_mismatch'); END;
+CREATE TRIGGER evidence_link_immutable_update BEFORE UPDATE ON evidence_link BEGIN SELECT RAISE(ABORT,'evidence_link_immutable'); END;
+CREATE TRIGGER evidence_link_immutable_delete BEFORE DELETE ON evidence_link BEGIN SELECT RAISE(ABORT,'evidence_link_immutable'); END;
 CREATE TABLE xp_ledger (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   aspect_id TEXT NOT NULL, evidence_id TEXT NOT NULL, points INTEGER NOT NULL CHECK(points BETWEEN 1 AND 3),
@@ -178,32 +228,10 @@ CREATE TABLE xp_ledger (
   FOREIGN KEY(owner_id,evidence_id) REFERENCES evidence(owner_id,id),
   UNIQUE(owner_id,evidence_id,aspect_id,rule_key)
 );
-CREATE TABLE level_up_candidate (
-  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
-  aspect_id TEXT NOT NULL, from_level INTEGER NOT NULL, to_level INTEGER NOT NULL,
-  threshold_snapshot TEXT NOT NULL, rationale TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('proposed','confirmed','rejected','expired')),
-  created_at TEXT NOT NULL, decided_at TEXT,
-  FOREIGN KEY(owner_id,aspect_id) REFERENCES character_aspect(owner_id,id)
-);
-CREATE TABLE weekly_review (
-  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
-  week_start TEXT NOT NULL, recap TEXT NOT NULL, citations_json TEXT NOT NULL,
-  recommendations_json TEXT NOT NULL, decisions_json TEXT NOT NULL,
-  status TEXT NOT NULL CHECK(status IN ('draft','presented','completed')),
-  created_at TEXT NOT NULL, UNIQUE(owner_id,week_start)
-);
-CREATE TABLE generation_run (
-  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
-  request_id TEXT NOT NULL, generator_kind TEXT NOT NULL CHECK(generator_kind='deterministic'),
-  generator_version TEXT NOT NULL, policy_version TEXT NOT NULL, input_hash TEXT NOT NULL, output_hash TEXT,
-  status TEXT NOT NULL CHECK(status IN ('started','succeeded','failed')), started_at TEXT NOT NULL, finished_at TEXT, error_class TEXT
-);
-CREATE TABLE privacy_operation (
-  id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL CHECK(kind IN ('export','delete')), status TEXT NOT NULL,
-  requested_at TEXT NOT NULL, completed_at TEXT, manifest_checksum TEXT, error_class TEXT
-);
+CREATE TRIGGER evidence_immutable_update BEFORE UPDATE ON evidence BEGIN SELECT RAISE(ABORT,'evidence_immutable'); END;
+CREATE TRIGGER evidence_immutable_delete BEFORE DELETE ON evidence BEGIN SELECT RAISE(ABORT,'evidence_immutable'); END;
+CREATE TRIGGER xp_ledger_immutable_update BEFORE UPDATE ON xp_ledger BEGIN SELECT RAISE(ABORT,'xp_ledger_immutable'); END;
+CREATE TRIGGER xp_ledger_immutable_delete BEFORE DELETE ON xp_ledger BEGIN SELECT RAISE(ABORT,'xp_ledger_immutable'); END;
 CREATE TABLE observation (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   type TEXT NOT NULL, value_type TEXT NOT NULL CHECK(value_type IN ('number','string','boolean')),
@@ -219,3 +247,5 @@ CREATE TABLE observation (
     OR (value_type='boolean' AND number_value IS NULL AND string_value IS NULL AND boolean_value IS NOT NULL)),
   UNIQUE(owner_id,provider,connection_id,source_record_id,source_revision)
 );
+CREATE TRIGGER observation_immutable_update BEFORE UPDATE ON observation BEGIN SELECT RAISE(ABORT,'observation_immutable'); END;
+CREATE TRIGGER observation_immutable_delete BEFORE DELETE ON observation BEGIN SELECT RAISE(ABORT,'observation_immutable'); END;

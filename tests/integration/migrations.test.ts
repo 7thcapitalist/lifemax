@@ -1,4 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { openDatabase } from "@/infrastructure/db/client";
+import { runMigrations } from "@/infrastructure/db/migrate";
 import { migratedDatabase } from "../helpers";
 
 describe("migrations", () => {
@@ -21,7 +26,42 @@ describe("migrations", () => {
     expect(() =>
       connection.sqlite.prepare("PRAGMA integrity_check").get(),
     ).not.toThrow();
+    const checksum = connection.sqlite
+      .prepare("SELECT checksum FROM __lifemaxing_migrations")
+      .pluck()
+      .get();
+    expect(checksum).toMatch(/^[a-f0-9]{64}$/);
     connection.sqlite.close();
+  });
+  it("rejects edited migration history and unstamped legacy history", () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "lifemaxing-migrations-"),
+    );
+    try {
+      const migration = path.join(directory, "0000_test.sql");
+      fs.writeFileSync(migration, "CREATE TABLE sample (id TEXT PRIMARY KEY);");
+      const connection = openDatabase(":memory:");
+      runMigrations(connection, directory);
+      fs.writeFileSync(
+        migration,
+        "CREATE TABLE sample (id TEXT PRIMARY KEY, changed TEXT);",
+      );
+      expect(() => runMigrations(connection, directory)).toThrow(
+        /MIGRATION_CHECKSUM_MISMATCH: 0000_test.sql/,
+      );
+      connection.sqlite.close();
+
+      const legacy = openDatabase(":memory:");
+      legacy.sqlite.exec(
+        "CREATE TABLE __lifemaxing_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL); INSERT INTO __lifemaxing_migrations VALUES ('0000_test.sql','2026-09-03T12:00:00Z');",
+      );
+      expect(() => runMigrations(legacy, directory)).toThrow(
+        /MIGRATION_CHECKSUM_MISSING: 0000_test.sql/,
+      );
+      legacy.sqlite.close();
+    } finally {
+      fs.rmSync(directory, { recursive: true });
+    }
   });
   it("enforces one owner, one active chapter, three active North Stars, and typed observations", () => {
     const { sqlite } = migratedDatabase();

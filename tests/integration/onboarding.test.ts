@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AuthService } from "@/application/auth/service";
 import { OnboardingService } from "@/application/onboarding/service";
 import { onboardingSchema } from "@/contracts/http";
+import { SqliteRepositories } from "@/infrastructure/db/repositories";
 import { FixedClock, migratedDatabase } from "../helpers";
 
 const input = onboardingSchema.parse({
@@ -32,13 +33,23 @@ describe("onboarding transaction and owner scope", () => {
   it("writes a complete aggregate once and rejects a different owner scope", async () => {
     const connection = migratedDatabase();
     const clock = new FixedClock(new Date("2026-09-03T12:00:00Z"));
-    const auth = new AuthService(connection, clock);
+    const repositories = new SqliteRepositories(connection);
+    const auth = new AuthService(
+      repositories.owners,
+      repositories.sessions,
+      repositories.transactions,
+      clock,
+    );
     const { ownerId } = await auth.setupOwner({
       displayName: "Synthetic Owner",
       timezone: "UTC",
       password: "synthetic-passphrase-only",
     });
-    const service = new OnboardingService(connection, clock);
+    const service = new OnboardingService(
+      repositories.owners,
+      repositories.transactions,
+      clock,
+    );
     service.complete(ownerId, input);
     expect(
       connection.sqlite
