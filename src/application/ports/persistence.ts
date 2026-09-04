@@ -17,9 +17,9 @@ export type StoredSession = {
   idleExpiresAt: string;
   absoluteExpiresAt: string;
   revokedAt: string | null;
-  tokenMatch: "current" | "previous";
-  previousTokenExpiresAt: string | null;
-  previousTokenUsesRemaining: number;
+  tokenMatch: "current" | "prior";
+  matchedTokenExpiresAt: string | null;
+  matchedTokenUsesRemaining: number | null;
 };
 
 export interface TransactionPort {
@@ -67,8 +67,9 @@ export interface SessionRepository {
     idleExpiresAt: string,
     previousTokenExpiresAt: string,
     previousTokenUses: number,
+    maxPriorGenerations: number,
   ): boolean;
-  usePreviousToken(
+  usePriorToken(
     id: string,
     tokenHash: string,
     now: string,

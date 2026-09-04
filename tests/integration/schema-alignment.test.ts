@@ -21,6 +21,7 @@ import {
   questOutcomes,
   quests,
   sessions,
+  sessionTokenHistory,
   xpLedger,
 } from "@/infrastructure/db/schema";
 import { migratedDatabase } from "../helpers";
@@ -29,6 +30,7 @@ const tables = [
   owners,
   credentials,
   sessions,
+  sessionTokenHistory,
   characterAspects,
   northStars,
   chapters,

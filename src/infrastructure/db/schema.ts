@@ -53,11 +53,7 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => owners.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull().unique(),
-    previousTokenHash: text("previous_token_hash"),
-    previousTokenExpiresAt: text("previous_token_expires_at"),
-    previousTokenUsesRemaining: integer("previous_token_uses_remaining")
-      .notNull()
-      .default(0),
+    tokenGeneration: integer("token_generation").notNull().default(0),
     csrfHash: text("csrf_hash").notNull(),
     createdAt: text("created_at").notNull(),
     lastUsedAt: text("last_used_at").notNull(),
@@ -67,10 +63,31 @@ export const sessions = sqliteTable(
   },
   (table) => [
     index("session_owner_idx").on(table.ownerId),
-    index("session_previous_token_idx").on(table.previousTokenHash),
+    check("session_token_generation_check", sql`${table.tokenGeneration} >= 0`),
+  ],
+);
+
+export const sessionTokenHistory = sqliteTable(
+  "session_token_history",
+  {
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    generation: integer("generation").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: text("expires_at").notNull(),
+    usesRemaining: integer("uses_remaining").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.generation] }),
+    index("session_token_history_session_idx").on(table.sessionId),
     check(
-      "session_previous_token_uses_check",
-      sql`${table.previousTokenUsesRemaining} BETWEEN 0 AND 8`,
+      "session_token_history_generation_check",
+      sql`${table.generation} >= 0`,
+    ),
+    check(
+      "session_token_history_uses_check",
+      sql`${table.usesRemaining} BETWEEN 0 AND 8`,
     ),
   ],
 );

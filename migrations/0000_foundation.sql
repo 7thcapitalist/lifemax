@@ -18,14 +18,24 @@ CREATE TABLE session (
   id TEXT PRIMARY KEY NOT NULL,
   owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   token_hash TEXT NOT NULL UNIQUE,
-  previous_token_hash TEXT, previous_token_expires_at TEXT,
-  previous_token_uses_remaining INTEGER NOT NULL DEFAULT 0 CHECK (previous_token_uses_remaining BETWEEN 0 AND 8),
+  token_generation INTEGER NOT NULL DEFAULT 0 CHECK (token_generation >= 0),
   csrf_hash TEXT NOT NULL,
   created_at TEXT NOT NULL, last_used_at TEXT NOT NULL,
   idle_expires_at TEXT NOT NULL, absolute_expires_at TEXT NOT NULL, revoked_at TEXT
 );
 CREATE INDEX session_owner_idx ON session(owner_id);
-CREATE INDEX session_previous_token_idx ON session(previous_token_hash);
+CREATE TABLE session_token_history (
+  session_id TEXT NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  uses_remaining INTEGER NOT NULL CHECK (uses_remaining BETWEEN 0 AND 8),
+  PRIMARY KEY(session_id,generation)
+);
+CREATE INDEX session_token_history_session_idx ON session_token_history(session_id);
+CREATE TRIGGER session_token_history_generation_limit BEFORE INSERT ON session_token_history
+WHEN (SELECT count(*) FROM session_token_history WHERE session_id=NEW.session_id) >= 3
+BEGIN SELECT RAISE(ABORT, 'session_token_history_generation_limit'); END;
 
 CREATE TABLE character_aspect (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,

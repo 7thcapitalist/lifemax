@@ -39,7 +39,7 @@ corepack pnpm restore:check -- /private/path/lifemaxing-backup.sqlite
 corepack pnpm verify
 ```
 
-The session policy permits up to eight in-flight uses of the immediately previous token within 10 seconds; those responses never emit a replacement cookie. Login backoff is source-scoped and retains at most 1,024 source buckets. When deploying behind TLS termination, configure the proxy to strip and replace `X-Real-IP` and `X-Forwarded-For`; never pass client-supplied values through. Missing or malformed source values share the direct-client bucket.
+The session policy retains at most three prior token generations, each for up to eight in-flight uses within 10 seconds. Prior-token responses never emit a replacement cookie, so delayed requests and out-of-order responses cannot roll the browser back to a stale token. Login backoff is source-scoped and retains at most 1,024 source buckets. When deploying behind TLS termination, configure the proxy to strip and replace `X-Real-IP` and `X-Forwarded-For`; never pass client-supplied values through. Missing or malformed source values share the direct-client bucket.
 
 The suite invokes the real backup/restore-check CLIs and covers migration checksums, owner-safe joins, setup takeover defenses, session rotation/cookies/expiry/rate limiting/origin checks, streamed body limits, onboarding rollback, immutable planning/progression records, guarded owner-wide hard deletion, timezone boundaries, deterministic briefings, dependency direction, SQL/Drizzle alignment, and the hard-disabled AI posture.
 

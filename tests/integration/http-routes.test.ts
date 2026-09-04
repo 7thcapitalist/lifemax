@@ -203,7 +203,7 @@ describe("HTTP security boundaries", () => {
     expect(active.repositories.owners.count()).toBe(1);
   });
 
-  it("sets hardened cookies, permits bounded parallel use, expires replay, and revokes", async () => {
+  it("handles bounded cross-generation session races, expiry, and revocation", async () => {
     active = installRuntime();
     await createOwner(active.auth);
     const signedIn = await loginRequest();
@@ -242,14 +242,33 @@ describe("HTTP security boundaries", () => {
       ).owner.setupCompleted,
     ).toBe(false);
 
-    // A late response authenticated by the previous token carries no stale cookie,
-    // so applying responses out of order cannot overwrite the current token.
+    // Same-generation raced responses carry no stale cookie.
     expect(
       parallel
         .filter((response) => response !== rotatingResponses[0])
         .every((response) => response.headers.get("set-cookie") === null),
     ).toBe(true);
-    for (let use = 0; use < 5; use += 1)
+
+    // T0 -> T1, T1 -> T2, then a delayed T0 remains valid. Delivering the
+    // delayed response last cannot roll the cookie back because it sets none.
+    const nextGeneration = await bootstrap(
+      request("/api/v1/bootstrap", {
+        headers: { cookie: "lifemaxing_session=" + rotated },
+      }),
+    );
+    expect(nextGeneration.status).toBe(200);
+    const currentToken = cookieValue(nextGeneration);
+    const delayedOriginal = await bootstrap(
+      request("/api/v1/bootstrap", {
+        headers: { cookie: "lifemaxing_session=" + token },
+      }),
+    );
+    expect(delayedOriginal.status).toBe(200);
+    expect(delayedOriginal.headers.get("set-cookie")).toBeNull();
+
+    // Three parallel grace uses plus the delayed use consumed four of T0's
+    // independent eight-use allowance.
+    for (let use = 4; use < 8; use += 1)
       expect(
         (
           await bootstrap(
@@ -298,7 +317,7 @@ describe("HTTP security boundaries", () => {
             method: "DELETE",
             headers: {
               origin: "https://attacker.test",
-              cookie: `lifemaxing_session=${rotated}`,
+              cookie: `lifemaxing_session=${currentToken}`,
               "x-csrf-token": csrf,
             },
           }),
@@ -311,13 +330,22 @@ describe("HTTP security boundaries", () => {
         method: "DELETE",
         headers: {
           origin: ORIGIN,
-          cookie: `lifemaxing_session=${rotated}`,
+          cookie: `lifemaxing_session=${currentToken}`,
           "x-csrf-token": csrf,
         },
       }),
     );
     expect(signedOut.status).toBe(204);
     expect(signedOut.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
+    expect(
+      (
+        await bootstrap(
+          request("/api/v1/bootstrap", {
+            headers: { cookie: `lifemaxing_session=${currentToken}` },
+          }),
+        )
+      ).status,
+    ).toBe(401);
     expect(
       (
         await bootstrap(

@@ -17,6 +17,7 @@ describe("migrations", () => {
       expect.arrayContaining([
         "owner",
         "session",
+        "session_token_history",
         "character_aspect",
         "quest",
         "briefing",

@@ -105,11 +105,16 @@ export class SqliteRepositories
       .prepare(
         `SELECT id, owner_id AS ownerId, token_hash AS tokenHash, csrf_hash AS csrfHash,
           idle_expires_at AS idleExpiresAt, absolute_expires_at AS absoluteExpiresAt, revoked_at AS revokedAt,
-          previous_token_expires_at AS previousTokenExpiresAt, previous_token_uses_remaining AS previousTokenUsesRemaining,
-          CASE WHEN token_hash=? THEN 'current' ELSE 'previous' END AS tokenMatch
-         FROM session WHERE token_hash=? OR previous_token_hash=? LIMIT 1`,
+          NULL AS matchedTokenExpiresAt, NULL AS matchedTokenUsesRemaining, 'current' AS tokenMatch
+         FROM session WHERE token_hash=?
+         UNION ALL
+         SELECT s.id, s.owner_id, s.token_hash, s.csrf_hash,
+          s.idle_expires_at, s.absolute_expires_at, s.revoked_at,
+          h.expires_at, h.uses_remaining, 'prior'
+         FROM session_token_history h JOIN session s ON s.id=h.session_id
+         WHERE h.token_hash=? LIMIT 1`,
       )
-      .get(tokenHash, tokenHash, tokenHash) as StoredSession | undefined;
+      .get(tokenHash, tokenHash) as StoredSession | undefined;
   }
 
   rotate(
@@ -120,49 +125,65 @@ export class SqliteRepositories
     idleExpiresAt: string,
     previousTokenExpiresAt: string,
     previousTokenUses: number,
+    maxPriorGenerations: number,
   ): boolean {
-    return (
-      this.connection.sqlite
+    return this.connection.sqlite.transaction(() => {
+      const rotated = this.connection.sqlite
         .prepare(
-          `UPDATE session SET token_hash=?, previous_token_hash=?, previous_token_expires_at=?,
-           previous_token_uses_remaining=?, last_used_at=?, idle_expires_at=?
+          `UPDATE session SET token_hash=?, token_generation=token_generation+1,
+           last_used_at=?, idle_expires_at=?
            WHERE id=? AND token_hash=? AND revoked_at IS NULL`,
         )
-        .run(
-          nextTokenHash,
-          expectedTokenHash,
-          previousTokenExpiresAt,
-          previousTokenUses,
-          now,
-          idleExpiresAt,
-          id,
-          expectedTokenHash,
-        ).changes === 1
-    );
+        .run(nextTokenHash, now, idleExpiresAt, id, expectedTokenHash).changes;
+      if (rotated !== 1) return false;
+      this.connection.sqlite
+        .prepare(
+          `DELETE FROM session_token_history
+           WHERE session_id=? AND (
+             expires_at<=? OR generation < (SELECT token_generation-? FROM session WHERE id=?)
+           )`,
+        )
+        .run(id, now, maxPriorGenerations, id);
+      this.connection.sqlite
+        .prepare(
+          `INSERT INTO session_token_history(session_id,generation,token_hash,expires_at,uses_remaining)
+           SELECT id,token_generation-1,?,?,? FROM session WHERE id=?`,
+        )
+        .run(expectedTokenHash, previousTokenExpiresAt, previousTokenUses, id);
+      return true;
+    })();
   }
 
-  usePreviousToken(
+  usePriorToken(
     id: string,
     tokenHash: string,
     now: string,
     idleExpiresAt: string,
   ): boolean {
-    return (
+    return this.connection.sqlite.transaction(() => {
+      const used = this.connection.sqlite
+        .prepare(
+          `UPDATE session_token_history SET uses_remaining=uses_remaining-1
+           WHERE session_id=? AND token_hash=? AND expires_at>? AND uses_remaining>0
+             AND EXISTS (SELECT 1 FROM session WHERE id=? AND revoked_at IS NULL
+               AND idle_expires_at>? AND absolute_expires_at>?)`,
+        )
+        .run(id, tokenHash, now, id, now, now).changes;
+      if (used !== 1) return false;
       this.connection.sqlite
         .prepare(
-          `UPDATE session SET previous_token_uses_remaining=previous_token_uses_remaining-1,
-           last_used_at=?, idle_expires_at=?
-           WHERE id=? AND previous_token_hash=? AND previous_token_expires_at>?
-             AND previous_token_uses_remaining>0 AND revoked_at IS NULL`,
+          "UPDATE session SET last_used_at=?, idle_expires_at=? WHERE id=?",
         )
-        .run(now, idleExpiresAt, id, tokenHash, now).changes === 1
-    );
+        .run(now, idleExpiresAt, id);
+      return true;
+    })();
   }
 
   revoke(tokenHash: string, now: string): void {
     this.connection.sqlite
       .prepare(
-        "UPDATE session SET revoked_at=? WHERE (token_hash=? OR previous_token_hash=?) AND revoked_at IS NULL",
+        `UPDATE session SET revoked_at=? WHERE revoked_at IS NULL AND
+         (token_hash=? OR id IN (SELECT session_id FROM session_token_history WHERE token_hash=?))`,
       )
       .run(now, tokenHash, tokenHash);
   }
