@@ -1,6 +1,7 @@
 # Roadmap
 
 ## Phase 0 — Is the game fun?
+
 - [x] Write product thesis
 - [x] Build first character dashboard
 - [x] Model domains and quests
@@ -11,6 +12,7 @@
 - [ ] Record what is actually useful vs performative
 
 ## Phase 1 — Personal operating system
+
 - [ ] Onboarding: “Who are you trying to become?”
 - [ ] Editable domains
 - [ ] Goal → quest decomposition
@@ -20,6 +22,7 @@
 - [ ] Basic AI game master
 
 ## Phase 2 — Evidence layer
+
 - [ ] Google Calendar
 - [ ] GitHub
 - [ ] Health provider feasibility spike
@@ -27,6 +30,7 @@
 - [ ] Manual evidence upload / check-in
 
 ## Phase 3 — Intelligence
+
 - [ ] Detect imbalance over time
 - [ ] Adaptive quest generation
 - [ ] Personal pattern memory
@@ -34,6 +38,7 @@
 - [ ] Let users reject/override the model
 
 ## Phase 4 — Product test
+
 - [ ] 5 friends use it for 2 weeks
 - [ ] Measure week-2 retention
 - [ ] Interview for emotional response, not feature requests

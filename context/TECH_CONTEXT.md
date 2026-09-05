@@ -35,7 +35,7 @@ directly on `main`.
 - Do not add external integrations (calendar, health, finance, GitHub
   evidence) without an explicit decision — see ROADMAP.md "Later".
 - Do not assume an agent's shell can run installs, `pnpm verify`, or `git
-  commit` directly in every worktree — see MEMORY.md for a real instance of
+commit` directly in every worktree — see MEMORY.md for a real instance of
   this being blocked.
 
 ## Observability

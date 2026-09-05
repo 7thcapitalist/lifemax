@@ -1,14 +1,17 @@
 # LifeMax — Product Thesis
 
 ## One sentence
+
 LifeMax is a character operating system that turns real-life progress into an RPG-like feedback loop without reducing a person to a single score.
 
 ## Core promise
+
 **Do not merely track your life. Play it.**
 
 The user defines the kind of person they want to become. LifeMax helps translate that identity into domains, quests, evidence of progress, reflections, and course corrections.
 
 ## Product principles
+
 1. **The user chooses the build.** There is no universal perfect human.
 2. **Never collapse a person into one life score.** Show a multidimensional character sheet.
 3. **Automate evidence, not meaning.** Integrations can observe sleep, workouts, money, calendar time, shipping, etc.; the user still decides what matters.
@@ -18,6 +21,7 @@ The user defines the kind of person they want to become. LifeMax helps translate
 7. **Privacy is part of the product.** Sensitive integrations must be deliberate, transparent, revocable, and minimized.
 
 ## Initial character domains
+
 - Builder
 - Body
 - Knowledge
@@ -30,6 +34,7 @@ The user defines the kind of person they want to become. LifeMax helps translate
 These are defaults, not a universal ontology.
 
 ## The core loop
+
 1. Define the character you want to become.
 2. Pick a small set of current quests.
 3. Gather evidence manually or from connected services.
@@ -38,11 +43,13 @@ These are defaults, not a universal ontology.
 6. Weekly reflection updates priorities and creates the next quests.
 
 ## MVP question
+
 **Would someone voluntarily open this every morning and every Sunday because it helps them live better—not because they feel guilty?**
 
 If that answer is not yes, integrations do not matter.
 
 ## v0
+
 - Character sheet with domains and levels
 - Weekly quests
 - Quest completion + progress
@@ -52,6 +59,7 @@ If that answer is not yes, integrations do not matter.
 - Local/mock data only
 
 ## v1 candidates
+
 - Authentication + persistent profile
 - Custom domains and identity statement
 - Calendar integration
@@ -62,6 +70,7 @@ If that answer is not yes, integrations do not matter.
 - Notifications
 
 ## Non-goals for now
+
 - Social network
 - Public leaderboard
 - One universal life score
