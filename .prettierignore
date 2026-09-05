@@ -1,0 +1,9 @@
+.next
+node_modules
+pnpm-lock.yaml
+coverage
+data
+playwright-report
+test-results
+blob-report
+docs/qa/screenshots
