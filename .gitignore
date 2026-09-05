@@ -1,3 +1,7 @@
+.write-test
+_extract_docs.py
+cursor-cli-override.json
+docs/qa/.agent-tmp
 node_modules/
 .next/
 coverage/
@@ -15,3 +19,6 @@ backups/
 .DS_Store
 playwright-report/
 test-results/
+blob-report/
+playwright/.cache/
+tests/e2e/artifacts/tmp/

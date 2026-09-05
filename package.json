@@ -18,6 +18,9 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:architecture": "vitest run --project architecture",
+    "test:e2e": "playwright test --project=journeys",
+    "test:e2e:screenshots": "playwright test --project=screenshots",
+    "seed:synthetic": "tsx scripts/seed-synthetic.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:migration-check": "vitest run --project integration tests/integration/migrations.test.ts",
     "backup": "tsx scripts/backup.ts",
@@ -36,8 +39,10 @@
     "zod": "4.1.5"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@eslint/eslintrc": "3.3.1",
     "@eslint/js": "9.34.0",
+    "@playwright/test": "1.55.0",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.18.0",
     "@types/react": "19.1.12",

@@ -68,9 +68,10 @@ export class AuthService {
     if (!row || !valid) return null;
     const now = this.clock.now();
     const token = randomBytes(32).toString("base64url");
-    const csrfToken = randomBytes(32).toString("base64url");
+    const sessionId = newId(now.getTime());
+    const csrfToken = digest(`csrf:${sessionId}`);
     this.sessions.create({
-      id: newId(now.getTime()),
+      id: sessionId,
       ownerId: row.ownerId,
       tokenHash: digest(token),
       csrfHash: digest(csrfToken),
@@ -157,6 +158,14 @@ export class AuthService {
       return { ownerId: raced.ownerId };
     }
     return { ownerId: row.ownerId, rotatedToken };
+  }
+
+  refreshCsrf(token: string | undefined): string | null {
+    if (!token) return null;
+    const row = this.sessions.findByTokenHash(digest(token));
+    if (!row || row.revokedAt) return null;
+    const csrfToken = digest(`csrf:${row.id}`);
+    return safeDigestEqual(digest(csrfToken), row.csrfHash) ? csrfToken : null;
   }
 
   revoke(token: string | undefined): void {

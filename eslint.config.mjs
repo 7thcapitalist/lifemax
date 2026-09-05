@@ -4,7 +4,18 @@ import tseslint from "typescript-eslint";
 
 const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 export default tseslint.config(
-  { ignores: [".next/**", "node_modules/**", "coverage/**", "next-env.d.ts"] },
+  {
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+      "blob-report/**",
+      "docs/qa/screenshots/**",
+      "next-env.d.ts",
+    ],
+  },
   js.configs.recommended,
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   {

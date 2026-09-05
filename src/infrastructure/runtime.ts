@@ -1,7 +1,12 @@
 import { LoginRateLimiter } from "@/application/auth/rate-limit";
 import { AuthService } from "@/application/auth/service";
 import { BootstrapService } from "@/application/bootstrap/service";
+import { CharacterService } from "@/application/character/service";
+import { ChronicleService } from "@/application/chronicle/service";
 import { OnboardingService } from "@/application/onboarding/service";
+import { PlanningService } from "@/application/planning/service";
+import { TodayService } from "@/application/today/service";
+import { DeterministicBriefingGenerator } from "@/domain/briefing/generator";
 import {
   IntlCalendarService,
   SystemClock,
@@ -14,7 +19,9 @@ function createRuntime() {
   const config = parseConfig(process.env);
   const connection = openDatabase(config.DATABASE_PATH);
   const clock = new SystemClock();
+  const calendar = new IntlCalendarService();
   const repositories = new SqliteRepositories(connection);
+  const briefingGenerator = new DeterministicBriefingGenerator();
   return {
     config,
     connection,
@@ -34,9 +41,32 @@ function createRuntime() {
     ),
     bootstrap: new BootstrapService(
       repositories.owners,
+      repositories.character,
       clock,
-      new IntlCalendarService(),
+      calendar,
+      config.SETUP_MODE,
     ),
+    today: new TodayService(
+      repositories.owners,
+      repositories.character,
+      repositories.planning,
+      clock,
+      calendar,
+    ),
+    planning: new PlanningService(
+      repositories.owners,
+      repositories.character,
+      repositories.planning,
+      repositories.transactions,
+      clock,
+      calendar,
+      briefingGenerator,
+    ),
+    character: new CharacterService(
+      repositories.owners,
+      repositories.character,
+    ),
+    chronicle: new ChronicleService(repositories.planning),
   };
 }
 

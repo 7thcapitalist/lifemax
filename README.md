@@ -1,6 +1,6 @@
 # Lifemaxing
 
-Private, single-owner foundation for a quiet morning ritual. This delivery provides the repository/privacy foundation and backend onboarding skeleton; it deliberately does not provide a substantial UI, external AI, telemetry, or provider integrations.
+Private, single-owner morning ritual. **D1** delivers a playable manual vertical slice: owner setup, character onboarding, deterministic briefing, quest accept/edit/swap/decline/resolve, and the Today / Character / Chronicle surfaces. External AI, XP/levels, weekly review, Fitbit, telemetry, and notifications remain out of scope.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ corepack pnpm db:migrate
 corepack pnpm dev
 ```
 
-Owner setup is closed by default. For the first run only, keep the server bound directly to loopback, set `SETUP_MODE=local`, create the owner through the local application, then stop it and return `SETUP_MODE=disabled` before normal use. The route additionally requires an exact configured Origin and localhost request host, and the database closes setup permanently after one owner. Do not expose this provisioning window through a proxy or tunnel.
+Owner setup is closed by default. For the first run only, keep the server bound directly to loopback, set `SETUP_MODE=local`, create the owner through `/setup`, then stop it and return `SETUP_MODE=disabled` before normal use. The route additionally requires an exact configured Origin and localhost request host, and the database closes setup permanently after one owner. Do not expose this provisioning window through a proxy or tunnel.
 
 The password is submitted only in the request body over localhost/TLS and stored only as an Argon2id hash. Never put passwords in arguments, environment files, fixtures, or logs.
 
@@ -37,7 +37,11 @@ corepack pnpm restore:check -- /private/path/lifemaxing-backup.sqlite
 
 ```sh
 corepack pnpm verify
+corepack pnpm test:e2e
+corepack pnpm test:e2e:screenshots
 ```
+
+`verify` runs format, lint, typecheck, unit/integration/architecture tests, and production build. Playwright E2E (including axe and responsive screenshots) is a separate gate so the browser suite can use an isolated database and fixed environment.
 
 The session policy retains at most three prior token generations, each for up to eight in-flight uses within 10 seconds. Prior-token responses never emit a replacement cookie, so delayed requests and out-of-order responses cannot roll the browser back to a stale token. Login backoff is source-scoped and retains at most 1,024 source buckets. When deploying behind TLS termination, configure the proxy to strip and replace `X-Real-IP` and `X-Forwarded-For`; never pass client-supplied values through. Missing or malformed source values share the direct-client bucket.
 
@@ -45,4 +49,4 @@ The suite invokes the real backup/restore-check CLIs and covers migration checks
 
 ## Scope
 
-See [architecture](docs/architecture.md) and [privacy contract](docs/privacy-contract.md). All tests use synthetic identities and life data.
+See [architecture](docs/architecture.md) and [privacy contract](docs/privacy-contract.md). All tests use synthetic identities and life data. Committed visual evidence lives under `docs/qa/screenshots/`.

@@ -41,9 +41,14 @@ describe("one-owner authentication and sessions", () => {
       connection.sqlite.prepare("SELECT token_hash FROM session").pluck().get(),
     ).not.toBe(session!.token);
     expect(auth.authenticate(session!.token, "wrong-csrf")).toBeNull();
+    expect(auth.refreshCsrf(session!.token)).toBe(session!.csrfToken);
+    expect(auth.refreshCsrf(session!.token)).toBe(session!.csrfToken);
     const authenticated = auth.authenticate(session!.token, session!.csrfToken);
     expect(authenticated?.ownerId).toBe(session!.ownerId);
     expect(authenticated?.rotatedToken).toBeTruthy();
+    expect(auth.refreshCsrf(authenticated!.rotatedToken)).toBe(
+      session!.csrfToken,
+    );
     expect(auth.authenticate(session!.token)?.ownerId).toBe(session!.ownerId);
     const renewed = auth.authenticate(authenticated!.rotatedToken);
     expect(renewed?.ownerId).toBe(session!.ownerId);

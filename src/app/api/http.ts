@@ -137,8 +137,8 @@ export function requireSession(
   requireCsrf = false,
   rotate = true,
 ) {
-  const csrf = requireCsrf
-    ? (request.headers.get("x-csrf-token") ?? undefined)
-    : undefined;
+  const csrfHeader = request.headers.get("x-csrf-token");
+  if (requireCsrf && !csrfHeader) return null;
+  const csrf = requireCsrf ? csrfHeader! : undefined;
   return authService.authenticate(sessionToken(request), csrf, rotate);
 }

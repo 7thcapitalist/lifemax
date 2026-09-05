@@ -1,0 +1,3 @@
+Add D1 playable UI, Playwright/axe E2E, and responsive screenshots.
+
+Ship the quiet morning-ritual surfaces (setup through Today/Character/Chronicle), synthetic seed helpers, and browser QA evidence while keeping D0 privacy invariants and excluding XP, AI egress, and integrations.

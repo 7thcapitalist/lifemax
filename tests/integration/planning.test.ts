@@ -257,6 +257,28 @@ describe("planning database invariants", () => {
     sqlite.close();
   });
 
+  it("allows atomic accepted-to-declined swap without losing daily capacity", () => {
+    const { sqlite } = migratedDatabase();
+    seedOwnerAndAspect(sqlite);
+    for (const id of ["q1", "q2", "q3", "q4"]) propose(sqlite, id);
+    accept(sqlite, "q1", "main");
+    accept(sqlite, "q2", "side");
+    accept(sqlite, "q3", "side");
+    expect(() => accept(sqlite, "q4", "side")).toThrow(/quest_daily_limit/);
+
+    sqlite
+      .prepare(
+        `UPDATE quest SET status='declined', role=NULL, accepted_size=NULL, accepted_at=NULL,
+         updated_at=?, version=version+1 WHERE id='q3' AND status='accepted'`,
+      )
+      .run(NOW);
+    expect(
+      sqlite.prepare("SELECT status FROM quest WHERE id='q3'").pluck().get(),
+    ).toBe("declined");
+    expect(() => accept(sqlite, "q4", "side")).not.toThrow();
+    sqlite.close();
+  });
+
   it("keeps evidence, links, and XP ledger append-only and owner-safe", () => {
     const { sqlite } = migratedDatabase();
     seedOwnerAndAspect(sqlite);

@@ -32,6 +32,12 @@ describe("migrations", () => {
       .pluck()
       .get();
     expect(checksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(
+      connection.sqlite
+        .prepare("SELECT count(*) FROM __lifemaxing_migrations")
+        .pluck()
+        .get(),
+    ).toBe(2);
     connection.sqlite.close();
   });
   it("rejects edited migration history and unstamped legacy history", () => {

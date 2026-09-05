@@ -3,15 +3,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LoginRateLimiter } from "@/application/auth/rate-limit";
 import { AuthService } from "@/application/auth/service";
 import { BootstrapService } from "@/application/bootstrap/service";
+import { CharacterService } from "@/application/character/service";
+import { ChronicleService } from "@/application/chronicle/service";
 import { OnboardingService } from "@/application/onboarding/service";
+import { PlanningService } from "@/application/planning/service";
+import { TodayService } from "@/application/today/service";
 import { MAX_BODY_BYTES } from "@/app/api/http";
 import { GET as bootstrap } from "@/app/api/v1/bootstrap/route";
+import { GET as getToday } from "@/app/api/v1/today/route";
 import {
   DELETE as logout,
   POST as login,
 } from "@/app/api/v1/auth/session/route";
 import { POST as completeOnboarding } from "@/app/api/v1/onboarding/complete/route";
 import { POST as setupOwner } from "@/app/api/v1/setup/owner/route";
+import { DeterministicBriefingGenerator } from "@/domain/briefing/generator";
 import { IntlCalendarService } from "@/infrastructure/clock/system";
 import { SqliteRepositories } from "@/infrastructure/db/repositories";
 import { type AppRuntime, installTestRuntime } from "@/infrastructure/runtime";
@@ -62,7 +68,9 @@ function cookieValue(response: Response): string {
 function installRuntime(setupMode: "disabled" | "local" = "disabled") {
   const connection = migratedDatabase();
   const clock = new FixedClock(new Date("2026-09-03T12:00:00Z"));
+  const calendar = new IntlCalendarService();
   const repositories = new SqliteRepositories(connection);
+  const briefingGenerator = new DeterministicBriefingGenerator();
   const auth = new AuthService(
     repositories.owners,
     repositories.sessions,
@@ -91,9 +99,32 @@ function installRuntime(setupMode: "disabled" | "local" = "disabled") {
     ),
     bootstrap: new BootstrapService(
       repositories.owners,
+      repositories.character,
       clock,
-      new IntlCalendarService(),
+      calendar,
+      setupMode,
     ),
+    today: new TodayService(
+      repositories.owners,
+      repositories.character,
+      repositories.planning,
+      clock,
+      calendar,
+    ),
+    planning: new PlanningService(
+      repositories.owners,
+      repositories.character,
+      repositories.planning,
+      repositories.transactions,
+      clock,
+      calendar,
+      briefingGenerator,
+    ),
+    character: new CharacterService(
+      repositories.owners,
+      repositories.character,
+    ),
+    chronicle: new ChronicleService(repositories.planning),
   };
   installTestRuntime(value);
   return value;
@@ -234,13 +265,19 @@ describe("HTTP security boundaries", () => {
     expect(rotatingResponses).toHaveLength(1);
     const rotated = cookieValue(rotatingResponses[0]!);
     expect(rotated).not.toBe(token);
-    expect(
-      (
-        (await parallel[3]!.json()) as {
-          owner: { setupCompleted: boolean };
-        }
-      ).owner.setupCompleted,
-    ).toBe(false);
+    const bootstrapPayloads = (await Promise.all(
+      parallel.map((response) => response.json()),
+    )) as Array<{
+      owner: { setupCompleted: boolean };
+      csrfToken: string;
+    }>;
+    expect(bootstrapPayloads[3]!.owner.setupCompleted).toBe(false);
+    expect(bootstrapPayloads.map((payload) => payload.csrfToken)).toEqual([
+      csrf,
+      csrf,
+      csrf,
+      csrf,
+    ]);
 
     // Same-generation raced responses carry no stale cookie.
     expect(
@@ -280,8 +317,8 @@ describe("HTTP security boundaries", () => {
       ).toBe(200);
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: "lifemaxing_session=" + token },
           }),
         )
@@ -292,8 +329,8 @@ describe("HTTP security boundaries", () => {
     const expiringToken = cookieValue(expiringLogin);
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: "lifemaxing_session=" + expiringToken },
           }),
         )
@@ -302,8 +339,8 @@ describe("HTTP security boundaries", () => {
     (active.clock as FixedClock).set(new Date("2026-09-03T12:00:10.001Z"));
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: "lifemaxing_session=" + expiringToken },
           }),
         )
@@ -339,8 +376,8 @@ describe("HTTP security boundaries", () => {
     expect(signedOut.headers.get("set-cookie")).toMatch(/Max-Age=0/i);
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: `lifemaxing_session=${currentToken}` },
           }),
         )
@@ -348,8 +385,8 @@ describe("HTTP security boundaries", () => {
     ).toBe(401);
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: `lifemaxing_session=${rotated}` },
           }),
         )
@@ -384,8 +421,8 @@ describe("HTTP security boundaries", () => {
     (active.clock as FixedClock).set(new Date("2026-09-03T13:28:00Z"));
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: `lifemaxing_session=${idleSession!.token}` },
           }),
         )
@@ -410,8 +447,8 @@ describe("HTTP security boundaries", () => {
     (active.clock as FixedClock).set(new Date("2026-09-03T13:00:00Z"));
     expect(
       (
-        await bootstrap(
-          request("/api/v1/bootstrap", {
+        await getToday(
+          request("/api/v1/today", {
             headers: { cookie: `lifemaxing_session=${absoluteSession!.token}` },
           }),
         )
