@@ -32,8 +32,8 @@
   "dependencies": {
     "@node-rs/argon2": "2.0.2",
     "better-sqlite3": "12.2.0",
-    "drizzle-orm": "0.44.5",
-    "next": "15.5.2",
+    "drizzle-orm": "0.45.2",
+    "next": "15.5.25",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "zod": "4.1.5"
@@ -42,14 +42,14 @@
     "@axe-core/playwright": "4.10.2",
     "@eslint/eslintrc": "3.3.1",
     "@eslint/js": "9.34.0",
-    "@playwright/test": "1.55.0",
+    "@playwright/test": "1.55.1",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.18.0",
     "@types/react": "19.1.12",
     "@types/react-dom": "19.1.9",
     "drizzle-kit": "0.31.4",
     "eslint": "9.34.0",
-    "eslint-config-next": "15.5.2",
+    "eslint-config-next": "15.5.25",
     "prettier": "3.6.2",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
@@ -59,6 +59,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "better-sqlite3"
-    ]
+    ],
+    "overrides": {
+      "sharp": ">=0.35.0",
+      "postcss": ">=8.5.18"
+    }
   }
 }
