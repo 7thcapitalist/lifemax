@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "mission": "Get LifeMax's real backend (auth, persistence, onboarding, core game loop) running well enough to use daily for a week, privacy-first, before considering any external integration.",
+  "successMetrics": [
+    {
+      "id": "m1",
+      "name": "pnpm verify passes end to end",
+      "current": "passes as of the D1 commit (lint, typecheck, unit, integration, architecture, build)",
+      "target": "stays green on every change"
+    },
+    {
+      "id": "m2",
+      "name": "consecutive days of real personal use",
+      "current": "0 — not yet started",
+      "target": "7 consecutive days, per the original v0 experiment plan"
+    }
+  ],
+  "currentPriorities": [
+    { "id": "p1", "title": "Run the app locally and fix any remaining build/type issues", "rationale": "The backend/core loop is built but has not been run end to end by the founder yet." },
+    { "id": "p2", "title": "Use it personally for 7 days and record friction", "rationale": "The MVP question (would I voluntarily open this?) can only be answered by real use, not more building." },
+    { "id": "p3", "title": "Add a lightweight weekly review flow", "rationale": "Named as the next structural gap after the core loop in the original roadmap." }
+  ],
+  "risks": [
+    {
+      "id": "r1",
+      "title": "AI_MODE/telemetry could be enabled by accident, breaking the privacy commitment",
+      "severity": "medium",
+      "likelihood": "low",
+      "mitigation": "Both default to disabled in .env.example; treat any change to these defaults as a decision, not a routine config edit.",
+      "owner": "security"
+    },
+    {
+      "id": "r2",
+      "title": "Product-market/personal fit is unproven — the core loop has never been used for real",
+      "severity": "medium",
+      "likelihood": "medium",
+      "mitigation": "Prioritized as p2 above: 7 days of real personal use before further building.",
+      "owner": "founder"
+    }
+  ],
+  "openDecisions": [],
+  "responsibleAgents": {
+    "productOwner": "founder",
+    "architect": "architect",
+    "builder": "backend-builder",
+    "uiBuilder": "frontend-builder",
+    "reviewer": "reviewer",
+    "security": "security"
+  }
+}
