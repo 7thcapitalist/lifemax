@@ -7,6 +7,30 @@ import { runMigrations } from "@/infrastructure/db/migrate";
 import { migratedDatabase } from "../helpers";
 
 describe("migrations", () => {
+  it("runs through the production libsql adapter without connection-local functions", () => {
+    const connection = openDatabase({
+      DB_DRIVER: "libsql",
+      DATABASE_PATH: ":memory:",
+      DATABASE_URL: ":memory:",
+      DATABASE_AUTH_TOKEN: "synthetic",
+    });
+    runMigrations(connection, path.resolve("migrations"));
+    expect(
+      (
+        connection.sqlite
+          .prepare("SELECT count(*) AS value FROM __lifemaxing_migrations")
+          .get() as { value: number }
+      ).value,
+    ).toBe(3);
+    const now = "2026-09-09T00:00:00.000Z";
+    connection.sqlite
+      .prepare(
+        "INSERT INTO owner(id,display_name,timezone,created_at,updated_at) VALUES ('remote-owner','Synthetic','UTC',?,?)",
+      )
+      .run(now, now);
+    expect(connection.deleteOwnerGraph("remote-owner")).toBe(true);
+    connection.sqlite.close();
+  });
   it("migrates an empty database idempotently with all foundation tables", () => {
     const connection = migratedDatabase();
     const names = connection.sqlite
@@ -37,7 +61,7 @@ describe("migrations", () => {
         .prepare("SELECT count(*) FROM __lifemaxing_migrations")
         .pluck()
         .get(),
-    ).toBe(2);
+    ).toBe(3);
     connection.sqlite.close();
   });
   it("rejects edited migration history and unstamped legacy history", () => {

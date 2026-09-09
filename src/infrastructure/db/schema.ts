@@ -37,6 +37,10 @@ export const owners = sqliteTable(
   ],
 );
 
+export const ownerDeleteGuard = sqliteTable("owner_delete_guard", {
+  ownerId: text("owner_id").primaryKey(),
+});
+
 export const credentials = sqliteTable("credential", {
   ownerId: text("owner_id")
     .primaryKey()

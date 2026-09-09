@@ -10,7 +10,19 @@ import { runtime as getRuntime } from "@/infrastructure/runtime";
 
 export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
-  const app = getRuntime();
+  let app;
+  try {
+    app = getRuntime();
+  } catch (error) {
+    console.error("Runtime initialization failed.", {
+      name: error instanceof Error ? error.name : "UnknownError",
+    });
+    return errorResponse(
+      503,
+      "STORE_UNAVAILABLE",
+      "The private app is temporarily unavailable.",
+    );
+  }
   const auth = requireSession(request, app.auth);
   if (!auth) return NextResponse.json(app.bootstrap.publicStatus());
   const result = app.bootstrap.get(auth.ownerId);
