@@ -35,8 +35,10 @@ export function openDatabase(input: string | DatabaseConfig) {
   if (config.DB_DRIVER === "sqlite")
     sqlite.function("lifemaxing_owner_delete_allowed", () => 0);
   sqlite.pragma("foreign_keys = ON");
-  if (config.DB_DRIVER === "sqlite") sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("busy_timeout = 5000");
+  if (config.DB_DRIVER === "sqlite") {
+    sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma("busy_timeout = 5000");
+  }
   return {
     sqlite,
     db: drizzle(sqlite, { schema }),
