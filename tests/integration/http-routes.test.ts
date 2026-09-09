@@ -8,6 +8,7 @@ import { ChronicleService } from "@/application/chronicle/service";
 import { OnboardingService } from "@/application/onboarding/service";
 import { PlanningService } from "@/application/planning/service";
 import { TodayService } from "@/application/today/service";
+import { GameService } from "@/application/game/service";
 import { MAX_BODY_BYTES } from "@/app/api/http";
 import { GET as bootstrap } from "@/app/api/v1/bootstrap/route";
 import { GET as getToday } from "@/app/api/v1/today/route";
@@ -18,8 +19,10 @@ import {
 import { POST as completeOnboarding } from "@/app/api/v1/onboarding/complete/route";
 import { POST as setupOwner } from "@/app/api/v1/setup/owner/route";
 import { DeterministicBriefingGenerator } from "@/domain/briefing/generator";
+import { DeterministicMissionGenerator } from "@/domain/game-master/generator";
 import { IntlCalendarService } from "@/infrastructure/clock/system";
 import { SqliteRepositories } from "@/infrastructure/db/repositories";
+import { SqliteGameRepositories } from "@/infrastructure/db/repositories-game";
 import { type AppRuntime, installTestRuntime } from "@/infrastructure/runtime";
 import { FixedClock, migratedDatabase } from "../helpers";
 
@@ -70,6 +73,7 @@ function installRuntime(setupMode: "disabled" | "local" = "disabled") {
   const clock = new FixedClock(new Date("2026-09-03T12:00:00Z"));
   const calendar = new IntlCalendarService();
   const repositories = new SqliteRepositories(connection);
+  const gameRepositories = new SqliteGameRepositories(connection);
   const briefingGenerator = new DeterministicBriefingGenerator();
   const auth = new AuthService(
     repositories.owners,
@@ -125,6 +129,13 @@ function installRuntime(setupMode: "disabled" | "local" = "disabled") {
       repositories.character,
     ),
     chronicle: new ChronicleService(repositories.planning),
+    game: new GameService(
+      repositories.owners,
+      gameRepositories,
+      clock,
+      calendar,
+      new DeterministicMissionGenerator(),
+    ),
   };
   installTestRuntime(value);
   return value;

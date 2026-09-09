@@ -7,6 +7,8 @@ import type {
   AuthenticatedSession,
   AuthService,
 } from "@/application/auth/service";
+import { ZodError } from "zod";
+import { DomainError } from "@/domain/shared/errors";
 
 export const MAX_BODY_BYTES = 65_536;
 
@@ -141,4 +143,30 @@ export function requireSession(
   if (requireCsrf && !csrfHeader) return null;
   const csrf = requireCsrf ? csrfHeader! : undefined;
   return authService.authenticate(sessionToken(request), csrf, rotate);
+}
+
+export function handledApiError(
+  error: unknown,
+  auth: AuthenticatedSession,
+  appOrigin: string,
+  fallbackCode = "GAME_FAILED",
+) {
+  const response =
+    error instanceof RequestBodyError
+      ? bodyErrorResponse(error)
+      : error instanceof ZodError
+        ? errorResponse(
+            422,
+            "VALIDATION",
+            "Invalid request.",
+            error.flatten().fieldErrors,
+          )
+        : error instanceof DomainError
+          ? errorResponse(409, error.code, error.message)
+          : errorResponse(
+              500,
+              fallbackCode,
+              "The request could not be completed.",
+            );
+  return applyRotatedSession(response, auth, appOrigin);
 }

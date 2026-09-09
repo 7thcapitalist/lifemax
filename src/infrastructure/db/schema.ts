@@ -239,6 +239,8 @@ export const quests = sqliteTable(
       enum: ["small", "standard", "major"],
     }),
     acceptedAt: text("accepted_at"),
+    progressCurrent: integer("progress_current").notNull().default(0),
+    progressTarget: integer("progress_target").notNull().default(1),
     ...timestamps,
   },
   (table) => [
@@ -537,4 +539,289 @@ export const xpLedger = sqliteTable(
     ),
     check("xp_ledger_points", sql`${table.points} BETWEEN 1 AND 3`),
   ],
+);
+
+export const characters = sqliteTable(
+  "character",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    ...timestamps,
+  },
+  (table) => [
+    unique("character_owner_id").on(table.ownerId, table.id),
+    unique("character_owner").on(table.ownerId),
+  ],
+);
+
+export const attributeProgress = sqliteTable(
+  "attribute_progress",
+  {
+    ownerId: text("owner_id").notNull(),
+    aspectId: text("aspect_id").notNull(),
+    level: integer("level").notNull(),
+    xpIntoLevel: integer("xp_into_level").notNull().default(0),
+    totalXp: integer("total_xp").notNull().default(0),
+    policyVersion: text("policy_version").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const missionPlans = sqliteTable(
+  "mission_plan",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    generatorVersion: text("generator_version").notNull(),
+    generatedAt: text("generated_at").notNull(),
+  },
+  (table) => [
+    unique("mission_plan_owner_id").on(table.ownerId, table.id),
+    unique("mission_plan_fingerprint").on(
+      table.ownerId,
+      table.localDate,
+      table.inputFingerprint,
+      table.generatorVersion,
+    ),
+  ],
+);
+
+export const missions = sqliteTable(
+  "mission",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    localDate: text("local_date").notNull(),
+    title: text("title").notNull(),
+    doneCondition: text("done_condition").notNull(),
+    kind: text("kind", {
+      enum: ["progress", "rest", "relationship", "exploration"],
+    }).notNull(),
+    size: text("size", { enum: ["small", "standard", "major"] }).notNull(),
+    status: text("status", {
+      enum: ["proposed", "accepted", "completed", "cancelled"],
+    }).notNull(),
+    source: text("source", { enum: ["owner", "generator"] }).notNull(),
+    planId: text("plan_id"),
+    questId: text("quest_id"),
+    chapterId: text("chapter_id"),
+    repeatFamilyKey: text("repeat_family_key"),
+    acceptedSize: text("accepted_size", {
+      enum: ["small", "standard", "major"],
+    }),
+    acceptedStretch: integer("accepted_stretch", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    rationale: text("rationale"),
+    idempotencyKey: text("idempotency_key"),
+    acceptedAt: text("accepted_at"),
+    completedAt: text("completed_at"),
+    ...timestamps,
+  },
+  (table) => [
+    unique("mission_owner_id").on(table.ownerId, table.id),
+    index("mission_owner_date_idx").on(table.ownerId, table.localDate),
+    uniqueIndex("mission_idempotency_idx")
+      .on(table.ownerId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    foreignKey({
+      columns: [table.ownerId, table.planId],
+      foreignColumns: [missionPlans.ownerId, missionPlans.id],
+    }),
+    foreignKey({
+      columns: [table.ownerId, table.questId],
+      foreignColumns: [quests.ownerId, quests.id],
+    }),
+    foreignKey({
+      columns: [table.ownerId, table.chapterId],
+      foreignColumns: [chapters.ownerId, chapters.id],
+    }),
+  ],
+);
+
+export const missionAttributes = sqliteTable(
+  "mission_attribute",
+  {
+    ownerId: text("owner_id").notNull(),
+    missionId: text("mission_id").notNull(),
+    aspectId: text("aspect_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.missionId, table.aspectId] }),
+    foreignKey({
+      columns: [table.ownerId, table.missionId],
+      foreignColumns: [missions.ownerId, missions.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }),
+  ],
+);
+
+export const attributeXpAwards = sqliteTable(
+  "attribute_xp_award",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    missionId: text("mission_id").notNull(),
+    aspectId: text("aspect_id").notNull(),
+    points: integer("points").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    breakdownJson: text("breakdown_json").notNull(),
+    localDate: text("local_date").notNull(),
+    awardedAt: text("awarded_at").notNull(),
+  },
+  (table) => [
+    unique("attribute_xp_award_owner_id").on(table.ownerId, table.id),
+    unique("attribute_xp_award_mission_aspect").on(
+      table.ownerId,
+      table.missionId,
+      table.aspectId,
+    ),
+    foreignKey({
+      columns: [table.ownerId, table.missionId],
+      foreignColumns: [missions.ownerId, missions.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.ownerId, table.aspectId],
+      foreignColumns: [characterAspects.ownerId, characterAspects.id],
+    }),
+  ],
+);
+
+export const rewards = sqliteTable(
+  "reward",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    coinCost: integer("coin_cost").notNull(),
+    status: text("status", { enum: ["active", "archived"] }).notNull(),
+    ...timestamps,
+  },
+  (table) => [unique("reward_owner_id").on(table.ownerId, table.id)],
+);
+export const rewardRedemptions = sqliteTable(
+  "reward_redemption",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    rewardId: text("reward_id").notNull(),
+    coinCost: integer("coin_cost").notNull(),
+    title: text("title").notNull(),
+    localDate: text("local_date").notNull(),
+    redeemedAt: text("redeemed_at").notNull(),
+  },
+  (table) => [
+    unique("reward_redemption_owner_id").on(table.ownerId, table.id),
+    foreignKey({
+      columns: [table.ownerId, table.rewardId],
+      foreignColumns: [rewards.ownerId, rewards.id],
+    }),
+  ],
+);
+export const coinLedger = sqliteTable(
+  "coin_ledger",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    entryType: text("entry_type", { enum: ["award", "redeem"] }).notNull(),
+    delta: integer("delta").notNull(),
+    reason: text("reason").notNull(),
+    missionId: text("mission_id"),
+    redemptionId: text("redemption_id"),
+    localDate: text("local_date").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    unique("coin_ledger_owner_id").on(table.ownerId, table.id),
+    unique("coin_ledger_mission").on(table.ownerId, table.missionId),
+    foreignKey({
+      columns: [table.ownerId, table.missionId],
+      foreignColumns: [missions.ownerId, missions.id],
+    }),
+    foreignKey({
+      columns: [table.ownerId, table.redemptionId],
+      foreignColumns: [rewardRedemptions.ownerId, rewardRedemptions.id],
+    }),
+  ],
+);
+export const achievementDefinitions = sqliteTable("achievement_definition", {
+  key: text("key").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  criteriaKind: text("criteria_kind").notNull(),
+});
+export const achievementUnlocks = sqliteTable(
+  "achievement_unlock",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    achievementKey: text("achievement_key")
+      .notNull()
+      .references(() => achievementDefinitions.key),
+    missionId: text("mission_id"),
+    unlockedAt: text("unlocked_at").notNull(),
+  },
+  (table) => [
+    unique("achievement_unlock_owner_id").on(table.ownerId, table.id),
+    unique("achievement_unlock_owner_key").on(
+      table.ownerId,
+      table.achievementKey,
+    ),
+    foreignKey({
+      columns: [table.ownerId, table.missionId],
+      foreignColumns: [missions.ownerId, missions.id],
+    }),
+  ],
+);
+export const academicEntries = sqliteTable(
+  "academic_entry",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    course: text("course"),
+    term: text("term"),
+    dueDate: text("due_date"),
+    status: text("status", {
+      enum: ["planned", "in_progress", "done", "dropped"],
+    }),
+    scoreValue: text("score_value"),
+    scoreScale: text("score_scale"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (table) => [unique("academic_entry_owner_id").on(table.ownerId, table.id)],
 );

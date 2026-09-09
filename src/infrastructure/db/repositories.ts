@@ -231,6 +231,11 @@ export class SqliteRepositories
     now: string,
   ): void {
     const aspectIds = input.aspects.map(() => newId());
+    this.connection.sqlite
+      .prepare(
+        "INSERT INTO character(id,owner_id,created_at,updated_at,version) VALUES (?,?,?,?,1) ON CONFLICT(owner_id) DO NOTHING",
+      )
+      .run(newId(), ownerId, now, now);
     const insertAspect = this.connection.sqlite.prepare(
       "INSERT INTO character_aspect (id,owner_id,name,definition,desired_identity,emphasis,sort_order,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,1)",
     );
@@ -247,6 +252,10 @@ export class SqliteRepositories
         now,
       ),
     );
+    const insertProgress = this.connection.sqlite.prepare(
+      "INSERT INTO attribute_progress(owner_id,aspect_id,level,xp_into_level,total_xp,policy_version,updated_at,version) VALUES (?,?,1,0,0,'game-v1',?,1)",
+    );
+    aspectIds.forEach((aspectId) => insertProgress.run(ownerId, aspectId, now));
     const insertStar = this.connection.sqlite.prepare(
       "INSERT INTO north_star (id,owner_id,title,motivation,status,created_at,updated_at,version) VALUES (?,?,?,?,'active',?,?,1)",
     );

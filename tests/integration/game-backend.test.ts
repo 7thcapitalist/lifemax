@@ -1,0 +1,246 @@
+import { describe, expect, it } from "vitest";
+import { SqliteRepositories } from "@/infrastructure/db/repositories";
+import { SqliteGameRepositories } from "@/infrastructure/db/repositories-game";
+import {
+  DeterministicMissionGenerator,
+  type MissionGenerator,
+} from "@/domain/game-master/generator";
+import { migratedDatabase, FixedClock } from "../helpers";
+import { GameService } from "@/application/game/service";
+import { IntlCalendarService } from "@/infrastructure/clock/system";
+import type { GameMasterContext } from "@/lib/game-types";
+const now = "2026-09-09T12:00:00.000Z";
+function setup() {
+  const connection = migratedDatabase(),
+    base = new SqliteRepositories(connection),
+    game = new SqliteGameRepositories(connection);
+  base.owners.createWithCredential({
+    id: "00000000-0000-4000-8000-000000000001",
+    displayName: "Owner",
+    timezone: "UTC",
+    passwordHash: "test",
+    now,
+  });
+  base.owners.completeOnboarding(
+    "00000000-0000-4000-8000-000000000001",
+    {
+      becomingStatement: "Become grounded",
+      aspects: ["Custom A", "Custom B", "Custom C", "Custom D"].map(
+        (name, index) => ({
+          name,
+          definition: "User defined",
+          desiredIdentity: "Intent",
+          emphasis: index === 1 ? ("dormant" as const) : ("active" as const),
+        }),
+      ),
+      northStars: [],
+      chapter: {
+        title: "Chapter",
+        intent: "Intent",
+        startDate: "2026-09-01",
+        endDate: "2026-10-01",
+        milestones: [
+          { title: "Milestone", doneCondition: "Done", aspectIndexes: [0] },
+        ],
+      },
+      guardrails: [{ category: "recovery", statement: "Protect rest" }],
+    },
+    now,
+  );
+  return { connection, game, ownerId: "00000000-0000-4000-8000-000000000001" };
+}
+describe("game backend", () => {
+  it("plans deterministically, completes once, and updates XP and coin ledgers atomically", () => {
+    const { connection, game, ownerId } = setup();
+    const context = game.gameMasterContext(ownerId, "2026-09-09", "low"),
+      generated = new DeterministicMissionGenerator().generate(context),
+      plan = game.savePlan(ownerId, "2026-09-09", now, generated, context);
+    expect(plan.proposals[0]?.kind).toBe("rest");
+    const attributeId = game.characterSheet(ownerId).attributes[0]!.id;
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-09",
+      {
+        title: "Meaningful task",
+        doneCondition: "Finished",
+        kind: "progress",
+        size: "major",
+        attributeIds: [attributeId],
+        questId: null,
+        chapterId: null,
+        repeatFamilyKey: "family",
+      },
+      now,
+    );
+    game.updateMission(
+      ownerId,
+      mission.id,
+      { status: "accepted", acceptedStretch: true },
+      now,
+    );
+    const result = game.completeMission(
+      ownerId,
+      mission.id,
+      "completion-1",
+      now,
+    );
+    expect(result.coinAward).toBe(5);
+    expect(result.xpAwards[0]!.points).toBeGreaterThan(0);
+    expect(game.characterSheet(ownerId).wallet.coinBalance).toBe(5);
+    expect(() =>
+      game.completeMission(ownerId, mission.id, "completion-1", now),
+    ).toThrow(/already completed/i);
+    expect(
+      connection.sqlite
+        .prepare("SELECT count(*) FROM coin_ledger")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    connection.sqlite.close();
+  });
+  it("keeps coins distinct from real-money vocabulary and rejects unaffordable rewards", () => {
+    const { connection, game, ownerId } = setup();
+    const reward = game.createReward(
+      ownerId,
+      { title: "Movie night", coinCost: 3, description: null },
+      now,
+    );
+    expect(() =>
+      game.redeemReward(ownerId, reward.id, "2026-09-09", now),
+    ).toThrow(/coins/);
+    const json = JSON.stringify({
+      sheet: game.characterSheet(ownerId),
+      rewards: game.listRewards(ownerId),
+    });
+    expect(json).not.toMatch(/money|cash|dollars|realMoney|price/i);
+    expect(json).toContain("coinCost");
+    connection.sqlite.close();
+  });
+  it("stores arbitrary academic categories and user-entered scales without inference", () => {
+    const { connection, game, ownerId } = setup();
+    const entry = game.createAcademic(
+      ownerId,
+      {
+        kind: "independent seminar",
+        title: "Systems",
+        scoreValue: "Excellent",
+        scoreScale: "narrative",
+        status: "done",
+      },
+      now,
+    );
+    expect(entry).toMatchObject({
+      kind: "independent seminar",
+      scoreValue: "Excellent",
+      scoreScale: "narrative",
+    });
+    expect(
+      connection.sqlite
+        .prepare("SELECT count(*) FROM academic_entry")
+        .pluck()
+        .get(),
+    ).toBe(1);
+    connection.sqlite.close();
+  });
+  it("passes explicit unknown values through the mockable generator port", () => {
+    const connection = migratedDatabase(),
+      base = new SqliteRepositories(connection),
+      game = new SqliteGameRepositories(connection),
+      ownerId = "00000000-0000-4000-8000-000000000002";
+    base.owners.createWithCredential({
+      id: ownerId,
+      displayName: "Owner",
+      timezone: "UTC",
+      passwordHash: "test",
+      now,
+    });
+    connection.sqlite
+      .prepare("UPDATE owner SET setup_completed=1 WHERE id=?")
+      .run(ownerId);
+    connection.sqlite
+      .prepare(
+        "INSERT INTO character(id,owner_id,created_at,updated_at,version) VALUES (?,?,?,?,1)",
+      )
+      .run("00000000-0000-4000-8000-000000000003", ownerId, now, now);
+    let received: GameMasterContext | undefined;
+    const mock: MissionGenerator = {
+      kind: "deterministic",
+      generate(context) {
+        received = context;
+        return {
+          generatorVersion: "mock-v1",
+          planFingerprint: "mock-fingerprint",
+          proposals: [
+            {
+              rank: 1,
+              title: "Rest",
+              doneCondition: "Pause",
+              size: "small",
+              kind: "rest",
+              attributeIds: [],
+              questId: null,
+              chapterId: null,
+              rationale: "All optional context is unknown.",
+              citations: [],
+            },
+          ],
+        };
+      },
+    };
+    const service = new GameService(
+      base.owners,
+      game,
+      new FixedClock(new Date(now)),
+      new IntlCalendarService(),
+      mock,
+    );
+    const result = service.dailyPlan(ownerId, {});
+    expect(result.proposals).toHaveLength(1);
+    expect(received).toMatchObject({
+      becomingStatement: { status: "unknown", value: null },
+      attributes: { status: "unknown", value: null },
+      activeChapter: { status: "unknown", value: null },
+      activeGuardrails: { status: "unknown", value: null },
+      recentActivity: { status: "unknown", value: null },
+      todayCheckIn: { status: "unknown", value: null },
+    });
+    connection.sqlite.close();
+  });
+  it("derives direct chapter progress and unlocks level-up only on a real level increase", () => {
+    const { connection, game, ownerId } = setup();
+    const sheet = game.characterSheet(ownerId);
+    const attributeId = sheet.attributes[0]!.id;
+    const chapterId = (
+      connection.sqlite
+        .prepare("SELECT id FROM chapter WHERE owner_id=? AND status='active'")
+        .get(ownerId) as { id: string }
+    ).id;
+    connection.sqlite
+      .prepare(
+        "UPDATE attribute_progress SET level=7,xp_into_level=0 WHERE owner_id=? AND aspect_id=?",
+      )
+      .run(ownerId, attributeId);
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-09",
+      {
+        title: "Direct chapter action",
+        doneCondition: "Done",
+        kind: "progress",
+        size: "small",
+        attributeIds: [attributeId],
+        questId: null,
+        chapterId,
+        repeatFamilyKey: "chapter-direct",
+      },
+      now,
+    );
+    game.updateMission(ownerId, mission.id, { status: "accepted" }, now);
+    const completed = game.completeMission(ownerId, mission.id, undefined, now);
+    expect(completed.chapterProgress).toEqual({ current: 1, target: 1 });
+    expect(completed.newlyUnlockedAchievements).not.toContain(
+      "first_attribute_level",
+    );
+    connection.sqlite.close();
+  });
+});

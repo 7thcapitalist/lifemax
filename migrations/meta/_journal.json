@@ -15,6 +15,13 @@
       "when": 1788559200000,
       "tag": "0001_swap_decline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788998400000,
+      "tag": "0002_game_backend",
+      "breakpoints": true
     }
   ]
 }
