@@ -91,6 +91,7 @@ function installRuntime() {
       PORT: 3000,
       APP_ORIGIN: ORIGIN,
       SETUP_MODE: "disabled",
+      DB_DRIVER: "sqlite",
       DATABASE_PATH: ":memory:",
       AI_MODE: "disabled",
     },

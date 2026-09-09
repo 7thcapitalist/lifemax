@@ -13,11 +13,19 @@ import {
 } from "@/infrastructure/clock/system";
 import { parseConfig } from "@/infrastructure/config/env";
 import { openDatabase } from "@/infrastructure/db/client";
+import { validateMigrationHistory } from "@/infrastructure/db/migrate";
 import { SqliteRepositories } from "@/infrastructure/db/repositories";
+import path from "node:path";
 
 function createRuntime() {
   const config = parseConfig(process.env);
-  const connection = openDatabase(config.DATABASE_PATH);
+  const connection = openDatabase(config);
+  try {
+    validateMigrationHistory(connection, path.resolve("migrations"));
+  } catch (error) {
+    connection.sqlite.close();
+    throw error;
+  }
   const clock = new SystemClock();
   const calendar = new IntlCalendarService();
   const repositories = new SqliteRepositories(connection);

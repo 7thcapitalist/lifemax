@@ -22,6 +22,8 @@ The password is submitted only in the request body over localhost/TLS and stored
 
 For a production-mode local run, build first and use `./run.sh`. Data defaults to the ignored `./data` directory with directory mode 0700.
 
+Vercel deployments use durable remote libSQL storage and operator-only owner provisioning. See the [Vercel deployment runbook](docs/deployment/vercel.md) for the fail-closed environment contract, migration lifecycle, provisioning, and production smoke test.
+
 ## Backup and restore verification
 
 Create every backup at a new explicit target; the command refuses overwrite, the source path, and symlink-parent targets. Backup files are forced to mode 0600 even inside an existing permissive directory.

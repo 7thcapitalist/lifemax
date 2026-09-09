@@ -7,6 +7,9 @@ const scriptSources =
 
 const config: NextConfig = {
   poweredByHeader: false,
+  outputFileTracingIncludes: {
+    "/api/v1/**/*": ["./migrations/*.sql"],
+  },
   experimental: { serverActions: { bodySizeLimit: "64kb" } },
   async headers() {
     return [
