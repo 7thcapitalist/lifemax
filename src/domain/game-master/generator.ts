@@ -50,14 +50,24 @@ type KnownGuardrail = {
 
 function protectiveKind(category: string): MissionProposal["kind"] {
   if (category === "connection") return "relationship";
-  if (category === "novelty" || category === "custom") return "exploration";
+  if (category === "novelty") return "exploration";
   return "rest";
 }
 
-function protectiveCopy(kind: MissionProposal["kind"]): {
+function protectiveCopy(
+  kind: MissionProposal["kind"],
+  customStatement?: string,
+): {
   title: string;
   doneCondition: string;
 } {
+  if (customStatement)
+    return {
+      title: "Honor your guardrail",
+      // Guardrail statements are already bounded owner input. Preserving the
+      // exact wording avoids weakening or reversing meaning through inference.
+      doneCondition: customStatement,
+    };
   if (kind === "relationship")
     return {
       title: "Protect connection",
@@ -134,7 +144,13 @@ export class DeterministicMissionGenerator implements MissionGenerator {
       guardrail?: KnownGuardrail,
     ) => {
       if (proposals.length >= 3) return;
-      const copy = protectiveCopy(kind);
+      // A custom guardrail has owner-authored meaning that cannot safely be
+      // inferred from its category. Use that statement as the action boundary
+      // instead of synthesizing a generic exploration that may contradict it.
+      const copy = protectiveCopy(
+        kind,
+        guardrail?.category === "custom" ? guardrail.statement : undefined,
+      );
       proposals.push({
         rank: proposals.length + 1,
         title: copy.title,
