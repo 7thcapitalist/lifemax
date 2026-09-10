@@ -6,6 +6,8 @@ const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
 export default tseslint.config(
   {
     ignores: [
+      // Factory gate evidence, not product code.
+      "evidence/**",
       ".next/**",
       "node_modules/**",
       "coverage/**",
