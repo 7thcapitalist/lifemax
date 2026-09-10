@@ -62,10 +62,11 @@ export class SqliteRepositories
   }
 
   count(): number {
-    return this.connection.sqlite
-      .prepare("SELECT count(*) FROM owner")
-      .pluck()
-      .get() as number;
+    return (
+      this.connection.sqlite
+        .prepare("SELECT count(*) AS value FROM owner")
+        .get() as { value: number }
+    ).value;
   }
 
   createWithCredential(input: {
@@ -844,9 +845,9 @@ export class SqliteRepositories
   }
 
   findLastActivityDate(ownerId: string): string | null {
-    const value = this.connection.sqlite
+    const row = this.connection.sqlite
       .prepare(
-        `SELECT max(d) FROM (
+        `SELECT max(d) AS value FROM (
            SELECT local_date AS d FROM daily_check_in WHERE owner_id=?
            UNION ALL
            SELECT local_date AS d FROM quest WHERE owner_id=?
@@ -856,9 +857,8 @@ export class SqliteRepositories
              WHERE o.owner_id=?
          )`,
       )
-      .pluck()
-      .get(ownerId, ownerId, ownerId) as string | null;
-    return value ?? null;
+      .get(ownerId, ownerId, ownerId) as { value: string | null };
+    return row.value ?? null;
   }
 
   aspectExists(ownerId: string, aspectId: string): boolean {

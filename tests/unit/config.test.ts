@@ -26,4 +26,35 @@ describe("configuration privacy gate", () => {
     ])
       expect(parseConfig({ APP_ORIGIN }).APP_ORIGIN).toBe(APP_ORIGIN);
   });
+  it("fails closed on Vercel storage, origin, and environment isolation", () => {
+    expect(() => parseConfig({ VERCEL: "1" })).toThrow(
+      /durable libsql storage/,
+    );
+    const production = {
+      VERCEL: "1",
+      VERCEL_ENV: "production",
+      NODE_ENV: "production",
+      DB_DRIVER: "libsql",
+      DATABASE_URL: "libsql://lifemax-production.example",
+      DATABASE_AUTH_TOKEN: "synthetic",
+      DATABASE_ENVIRONMENT: "production",
+      APP_ORIGIN: "https://lifemax.example",
+    } as const;
+    expect(parseConfig(production).APP_ORIGIN).toBe("https://lifemax.example");
+    expect(() =>
+      parseConfig({ ...production, DATABASE_ENVIRONMENT: "preview" }),
+    ).toThrow(/production-tagged database/);
+    expect(() =>
+      parseConfig({ ...production, APP_ORIGIN: "http://127.0.0.1:3000" }),
+    ).toThrow(/explicit HTTPS APP_ORIGIN/);
+    expect(
+      parseConfig({
+        ...production,
+        VERCEL_ENV: "preview",
+        DATABASE_ENVIRONMENT: "preview",
+        APP_ORIGIN: undefined,
+        VERCEL_URL: "lifemax-preview.example",
+      }).APP_ORIGIN,
+    ).toBe("https://lifemax-preview.example");
+  });
 });

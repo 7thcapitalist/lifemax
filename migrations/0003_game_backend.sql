@@ -1,3 +1,10 @@
+-- Applies AFTER 0002_remote_owner_delete, which replaced the connection-local
+-- `lifemaxing_owner_delete_allowed()` escape hatch with the `owner_delete_guard`
+-- table so deletion rules also hold on a remote libSQL connection. These game
+-- triggers use that same guard: a connection-local function is not available to
+-- the libsql adapter, and reintroducing one here would have silently reopened
+-- the hole 0002 closed.
+
 ALTER TABLE quest ADD COLUMN progress_current INTEGER NOT NULL DEFAULT 0 CHECK (progress_current >= 0);
 ALTER TABLE quest ADD COLUMN progress_target INTEGER NOT NULL DEFAULT 1 CHECK (progress_target > 0);
 
@@ -67,7 +74,7 @@ CREATE TRIGGER mission_attribute_immutable_update BEFORE UPDATE ON mission_attri
 WHEN EXISTS(SELECT 1 FROM mission WHERE owner_id=OLD.owner_id AND id=OLD.mission_id AND status IN ('accepted','completed'))
 BEGIN SELECT RAISE(ABORT,'mission_attribute_immutable'); END;
 CREATE TRIGGER mission_attribute_immutable_delete BEFORE DELETE ON mission_attribute
-WHEN lifemaxing_owner_delete_allowed()!=1 AND EXISTS(SELECT 1 FROM mission WHERE owner_id=OLD.owner_id AND id=OLD.mission_id AND status IN ('accepted','completed'))
+WHEN NOT EXISTS (SELECT 1 FROM owner_delete_guard WHERE owner_id=OLD.owner_id) AND EXISTS(SELECT 1 FROM mission WHERE owner_id=OLD.owner_id AND id=OLD.mission_id AND status IN ('accepted','completed'))
 BEGIN SELECT RAISE(ABORT,'mission_attribute_immutable'); END;
 CREATE TABLE attribute_xp_award (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
@@ -78,7 +85,7 @@ CREATE TABLE attribute_xp_award (
   UNIQUE(owner_id,id), UNIQUE(owner_id,mission_id,aspect_id)
 );
 CREATE TRIGGER attribute_xp_award_update BEFORE UPDATE ON attribute_xp_award BEGIN SELECT RAISE(ABORT,'attribute_xp_award_immutable'); END;
-CREATE TRIGGER attribute_xp_award_delete BEFORE DELETE ON attribute_xp_award WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'attribute_xp_award_immutable'); END;
+CREATE TRIGGER attribute_xp_award_delete BEFORE DELETE ON attribute_xp_award WHEN NOT EXISTS (SELECT 1 FROM owner_delete_guard WHERE owner_id=OLD.owner_id) BEGIN SELECT RAISE(ABORT,'attribute_xp_award_immutable'); END;
 CREATE TABLE reward (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   title TEXT NOT NULL, description TEXT, coin_cost INTEGER NOT NULL CHECK(coin_cost > 0),
@@ -102,9 +109,9 @@ CREATE TABLE coin_ledger (
   UNIQUE(owner_id,id), UNIQUE(owner_id,mission_id)
 );
 CREATE TRIGGER coin_ledger_update BEFORE UPDATE ON coin_ledger BEGIN SELECT RAISE(ABORT,'coin_ledger_immutable'); END;
-CREATE TRIGGER coin_ledger_delete BEFORE DELETE ON coin_ledger WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'coin_ledger_immutable'); END;
+CREATE TRIGGER coin_ledger_delete BEFORE DELETE ON coin_ledger WHEN NOT EXISTS (SELECT 1 FROM owner_delete_guard WHERE owner_id=OLD.owner_id) BEGIN SELECT RAISE(ABORT,'coin_ledger_immutable'); END;
 CREATE TRIGGER reward_redemption_update BEFORE UPDATE ON reward_redemption BEGIN SELECT RAISE(ABORT,'reward_redemption_immutable'); END;
-CREATE TRIGGER reward_redemption_delete BEFORE DELETE ON reward_redemption WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'reward_redemption_immutable'); END;
+CREATE TRIGGER reward_redemption_delete BEFORE DELETE ON reward_redemption WHEN NOT EXISTS (SELECT 1 FROM owner_delete_guard WHERE owner_id=OLD.owner_id) BEGIN SELECT RAISE(ABORT,'reward_redemption_immutable'); END;
 CREATE TABLE achievement_definition (
   key TEXT PRIMARY KEY NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, criteria_kind TEXT NOT NULL
 );
@@ -115,7 +122,7 @@ CREATE TABLE achievement_unlock (
   UNIQUE(owner_id,id), UNIQUE(owner_id,achievement_key)
 );
 CREATE TRIGGER achievement_unlock_update BEFORE UPDATE ON achievement_unlock BEGIN SELECT RAISE(ABORT,'achievement_unlock_immutable'); END;
-CREATE TRIGGER achievement_unlock_delete BEFORE DELETE ON achievement_unlock WHEN lifemaxing_owner_delete_allowed()!=1 BEGIN SELECT RAISE(ABORT,'achievement_unlock_immutable'); END;
+CREATE TRIGGER achievement_unlock_delete BEFORE DELETE ON achievement_unlock WHEN NOT EXISTS (SELECT 1 FROM owner_delete_guard WHERE owner_id=OLD.owner_id) BEGIN SELECT RAISE(ABORT,'achievement_unlock_immutable'); END;
 CREATE TABLE academic_entry (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL REFERENCES owner(id) ON DELETE CASCADE,
   kind TEXT NOT NULL, title TEXT NOT NULL, course TEXT, term TEXT, due_date TEXT,

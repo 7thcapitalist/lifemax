@@ -116,6 +116,7 @@ describe("game HTTP routes", () => {
         PORT: 3000,
         APP_ORIGIN: origin,
         SETUP_MODE: "disabled",
+        DB_DRIVER: "sqlite",
         DATABASE_PATH: ":memory:",
         AI_MODE: "disabled",
       },

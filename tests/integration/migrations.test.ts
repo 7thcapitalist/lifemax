@@ -6,7 +6,39 @@ import { openDatabase } from "@/infrastructure/db/client";
 import { runMigrations } from "@/infrastructure/db/migrate";
 import { migratedDatabase } from "../helpers";
 
+// Derived, never hard-coded. Two branches adding a migration in parallel each
+// merge cleanly and then the count is wrong — which is exactly what happened
+// here: this branch added the game migration while main added
+// 0002_remote_owner_delete, and a literal 3 became a failing 4.
+const MIGRATION_COUNT = fs
+  .readdirSync(path.resolve("migrations"))
+  .filter((name) => /^\d+.*\.sql$/.test(name)).length;
+
 describe("migrations", () => {
+  it("runs through the production libsql adapter without connection-local functions", () => {
+    const connection = openDatabase({
+      DB_DRIVER: "libsql",
+      DATABASE_PATH: ":memory:",
+      DATABASE_URL: ":memory:",
+      DATABASE_AUTH_TOKEN: "synthetic",
+    });
+    runMigrations(connection, path.resolve("migrations"));
+    expect(
+      (
+        connection.sqlite
+          .prepare("SELECT count(*) AS value FROM __lifemaxing_migrations")
+          .get() as { value: number }
+      ).value,
+    ).toBe(MIGRATION_COUNT);
+    const now = "2026-09-09T00:00:00.000Z";
+    connection.sqlite
+      .prepare(
+        "INSERT INTO owner(id,display_name,timezone,created_at,updated_at) VALUES ('remote-owner','Synthetic','UTC',?,?)",
+      )
+      .run(now, now);
+    expect(connection.deleteOwnerGraph("remote-owner")).toBe(true);
+    connection.sqlite.close();
+  });
   it("migrates an empty database idempotently with all foundation tables", () => {
     const connection = migratedDatabase();
     const names = connection.sqlite
@@ -37,7 +69,7 @@ describe("migrations", () => {
         .prepare("SELECT count(*) FROM __lifemaxing_migrations")
         .pluck()
         .get(),
-    ).toBe(3);
+    ).toBe(MIGRATION_COUNT);
     connection.sqlite.close();
   });
   it("rejects edited migration history and unstamped legacy history", () => {
@@ -69,6 +101,49 @@ describe("migrations", () => {
     } finally {
       fs.rmSync(directory, { recursive: true });
     }
+  });
+  // 0002_remote_owner_delete replaced the connection-local
+  // `lifemaxing_owner_delete_allowed()` escape hatch with a table guard so the
+  // rules also hold on a remote libSQL connection, which cannot register
+  // connection-local functions at all. The game tables added afterwards must use
+  // that same guard: a trigger written the old way still creates fine and then
+  // fails at delete time with "no such function", reopening the hole 0002 shut.
+  it("game deletion guards work on the libsql adapter, not just local sqlite", () => {
+    const connection = openDatabase({
+      DB_DRIVER: "libsql",
+      DATABASE_PATH: ":memory:",
+      DATABASE_URL: ":memory:",
+      DATABASE_AUTH_TOKEN: "synthetic",
+    });
+    runMigrations(connection, path.resolve("migrations"));
+    const now = "2026-09-09T00:00:00.000Z";
+    connection.sqlite
+      .prepare(
+        "INSERT INTO owner(id,display_name,timezone,created_at,updated_at) VALUES ('o1','O','UTC',?,?)",
+      )
+      .run(now, now);
+    connection.sqlite
+      .prepare(
+        "INSERT INTO coin_ledger(id,owner_id,entry_type,delta,reason,local_date,created_at) VALUES ('cl1','o1','award',5,'test','2026-09-09',?)",
+      )
+      .run(now);
+
+    expect(() =>
+      connection.sqlite.prepare("DELETE FROM coin_ledger WHERE id='cl1'").run(),
+    ).toThrow(/coin_ledger_immutable/);
+
+    connection.sqlite
+      .prepare("INSERT INTO owner_delete_guard(owner_id) VALUES ('o1')")
+      .run();
+    connection.sqlite.prepare("DELETE FROM coin_ledger WHERE id='cl1'").run();
+    expect(
+      (
+        connection.sqlite
+          .prepare("SELECT count(*) AS value FROM coin_ledger")
+          .get() as { value: number }
+      ).value,
+    ).toBe(0);
+    connection.sqlite.close();
   });
   it("backfills game state without changing populated foundation rows", () => {
     const directory = fs.mkdtempSync(
@@ -138,10 +213,16 @@ describe("migrations", () => {
           .get(),
         outcome: connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
       };
-      fs.copyFileSync(
-        path.resolve("migrations/0002_game_backend.sql"),
-        path.join(directory, "0002_game_backend.sql"),
-      );
+      // Both, in production order: the game triggers depend on the
+      // `owner_delete_guard` table that 0002_remote_owner_delete creates.
+      for (const name of [
+        "0002_remote_owner_delete.sql",
+        "0003_game_backend.sql",
+      ])
+        fs.copyFileSync(
+          path.resolve("migrations", name),
+          path.join(directory, name),
+        );
       runMigrations(connection, directory);
       expect(connection.sqlite.prepare("SELECT * FROM owner").get()).toEqual(
         before.owner,

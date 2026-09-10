@@ -16,6 +16,7 @@ import {
   northStarAspects,
   northStars,
   observations,
+  ownerDeleteGuard,
   owners,
   questAspects,
   questOutcomes,
@@ -40,6 +41,7 @@ import { migratedDatabase } from "../helpers";
 
 const tables = [
   owners,
+  ownerDeleteGuard,
   credentials,
   sessions,
   sessionTokenHistory,
