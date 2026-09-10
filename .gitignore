@@ -22,3 +22,6 @@ test-results/
 blob-report/
 playwright/.cache/
 tests/e2e/artifacts/tmp/
+
+# Factory gate evidence (per-task proof artifacts, never product files)
+evidence/

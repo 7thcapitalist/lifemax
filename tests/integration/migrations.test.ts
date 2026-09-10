@@ -6,6 +6,14 @@ import { openDatabase } from "@/infrastructure/db/client";
 import { runMigrations } from "@/infrastructure/db/migrate";
 import { migratedDatabase } from "../helpers";
 
+// Derived, never hard-coded. Two branches adding a migration in parallel each
+// merge cleanly and then the count is wrong — which is exactly what happened
+// here: this branch added the game migration while main added
+// 0002_remote_owner_delete, and a literal 3 became a failing 4.
+const MIGRATION_COUNT = fs
+  .readdirSync(path.resolve("migrations"))
+  .filter((name) => /^\d+.*\.sql$/.test(name)).length;
+
 describe("migrations", () => {
   it("runs through the production libsql adapter without connection-local functions", () => {
     const connection = openDatabase({
@@ -21,7 +29,7 @@ describe("migrations", () => {
           .prepare("SELECT count(*) AS value FROM __lifemaxing_migrations")
           .get() as { value: number }
       ).value,
-    ).toBe(3);
+    ).toBe(MIGRATION_COUNT);
     const now = "2026-09-09T00:00:00.000Z";
     connection.sqlite
       .prepare(
@@ -61,7 +69,7 @@ describe("migrations", () => {
         .prepare("SELECT count(*) FROM __lifemaxing_migrations")
         .pluck()
         .get(),
-    ).toBe(3);
+    ).toBe(MIGRATION_COUNT);
     connection.sqlite.close();
   });
   it("rejects edited migration history and unstamped legacy history", () => {
@@ -90,6 +98,178 @@ describe("migrations", () => {
         /MIGRATION_CHECKSUM_MISSING: 0000_test.sql/,
       );
       legacy.sqlite.close();
+    } finally {
+      fs.rmSync(directory, { recursive: true });
+    }
+  });
+  // 0002_remote_owner_delete replaced the connection-local
+  // `lifemaxing_owner_delete_allowed()` escape hatch with a table guard so the
+  // rules also hold on a remote libSQL connection, which cannot register
+  // connection-local functions at all. The game tables added afterwards must use
+  // that same guard: a trigger written the old way still creates fine and then
+  // fails at delete time with "no such function", reopening the hole 0002 shut.
+  it("game deletion guards work on the libsql adapter, not just local sqlite", () => {
+    const connection = openDatabase({
+      DB_DRIVER: "libsql",
+      DATABASE_PATH: ":memory:",
+      DATABASE_URL: ":memory:",
+      DATABASE_AUTH_TOKEN: "synthetic",
+    });
+    runMigrations(connection, path.resolve("migrations"));
+    const now = "2026-09-09T00:00:00.000Z";
+    connection.sqlite
+      .prepare(
+        "INSERT INTO owner(id,display_name,timezone,created_at,updated_at) VALUES ('o1','O','UTC',?,?)",
+      )
+      .run(now, now);
+    connection.sqlite
+      .prepare(
+        "INSERT INTO coin_ledger(id,owner_id,entry_type,delta,reason,local_date,created_at) VALUES ('cl1','o1','award',5,'test','2026-09-09',?)",
+      )
+      .run(now);
+
+    expect(() =>
+      connection.sqlite.prepare("DELETE FROM coin_ledger WHERE id='cl1'").run(),
+    ).toThrow(/coin_ledger_immutable/);
+
+    connection.sqlite
+      .prepare("INSERT INTO owner_delete_guard(owner_id) VALUES ('o1')")
+      .run();
+    connection.sqlite.prepare("DELETE FROM coin_ledger WHERE id='cl1'").run();
+    expect(
+      (
+        connection.sqlite
+          .prepare("SELECT count(*) AS value FROM coin_ledger")
+          .get() as { value: number }
+      ).value,
+    ).toBe(0);
+    connection.sqlite.close();
+  });
+  it("backfills game state without changing populated foundation rows", () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "lifemaxing-pre-game-"),
+    );
+    try {
+      for (const name of ["0000_foundation.sql", "0001_swap_decline.sql"])
+        fs.copyFileSync(
+          path.resolve("migrations", name),
+          path.join(directory, name),
+        );
+      const connection = openDatabase(":memory:");
+      runMigrations(connection, directory);
+      const now = "2026-09-03T12:00:00Z";
+      connection.sqlite
+        .prepare(
+          "INSERT INTO owner(id,display_name,timezone,becoming_statement,setup_completed,created_at,updated_at,version) VALUES ('o1','Owner','UTC','Become steady',1,?,?,4)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO character_aspect(id,owner_id,name,definition,desired_identity,emphasis,sort_order,level,created_at,updated_at,version) VALUES ('a1','o1','Custom','Defined','Identity','dormant',0,7,?,?,3)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO north_star(id,owner_id,title,motivation,status,created_at,updated_at,version) VALUES ('n1','o1','North','Why','active',?,?,2)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO chapter(id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at,version) VALUES ('c1','o1','Chapter','Intent','2026-09-01','2026-10-01','active',?,?,2)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO milestone(id,owner_id,chapter_id,title,done_condition,status,sort_order,created_at,updated_at,version) VALUES ('m1','o1','c1','Milestone','Done','active',0,?,?,2)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO quest(id,owner_id,local_date,title,done_condition,reason,size,source,status,milestone_id,created_at,updated_at,version) VALUES ('q1','o1','2026-09-02','Quest','Done','Reason','small','owner','proposed','m1',?,?,1)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "UPDATE quest SET status='accepted',role='main',accepted_size='small',accepted_at=? WHERE id='q1'",
+        )
+        .run(now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO quest_outcome(id,quest_id,owner_id,outcome,occurred_at,reflection,accepted_size) VALUES ('qo1','q1','o1','completed',?,'Kept history','small')",
+        )
+        .run(now);
+      const before = {
+        owner: connection.sqlite.prepare("SELECT * FROM owner").get(),
+        aspect: connection.sqlite
+          .prepare("SELECT * FROM character_aspect")
+          .get(),
+        star: connection.sqlite.prepare("SELECT * FROM north_star").get(),
+        chapter: connection.sqlite.prepare("SELECT * FROM chapter").get(),
+        milestone: connection.sqlite.prepare("SELECT * FROM milestone").get(),
+        quest: connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,local_date,title,done_condition,reason,size,source,status,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at,created_at,updated_at,version FROM quest",
+          )
+          .get(),
+        outcome: connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
+      };
+      // Both, in production order: the game triggers depend on the
+      // `owner_delete_guard` table that 0002_remote_owner_delete creates.
+      for (const name of [
+        "0002_remote_owner_delete.sql",
+        "0003_game_backend.sql",
+      ])
+        fs.copyFileSync(
+          path.resolve("migrations", name),
+          path.join(directory, name),
+        );
+      runMigrations(connection, directory);
+      expect(connection.sqlite.prepare("SELECT * FROM owner").get()).toEqual(
+        before.owner,
+      );
+      expect(
+        connection.sqlite.prepare("SELECT * FROM character_aspect").get(),
+      ).toEqual(before.aspect);
+      expect(
+        connection.sqlite.prepare("SELECT * FROM north_star").get(),
+      ).toEqual(before.star);
+      expect(connection.sqlite.prepare("SELECT * FROM chapter").get()).toEqual(
+        before.chapter,
+      );
+      expect(
+        connection.sqlite.prepare("SELECT * FROM milestone").get(),
+      ).toEqual(before.milestone);
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,local_date,title,done_condition,reason,size,source,status,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at,created_at,updated_at,version FROM quest",
+          )
+          .get(),
+      ).toEqual(before.quest);
+      expect(
+        connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
+      ).toEqual(before.outcome);
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT progress_current progressCurrent,progress_target progressTarget FROM quest WHERE id='q1'",
+          )
+          .get(),
+      ).toEqual({ progressCurrent: 1, progressTarget: 1 });
+      expect(
+        connection.sqlite
+          .prepare("SELECT count(*) FROM character WHERE owner_id='o1'")
+          .pluck()
+          .get(),
+      ).toBe(1);
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT level,total_xp FROM attribute_progress WHERE owner_id='o1' AND aspect_id='a1'",
+          )
+          .get(),
+      ).toEqual({ level: 7, total_xp: 0 });
+      connection.sqlite.close();
     } finally {
       fs.rmSync(directory, { recursive: true });
     }
