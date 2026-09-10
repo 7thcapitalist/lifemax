@@ -1,6 +1,14 @@
 ALTER TABLE quest ADD COLUMN progress_current INTEGER NOT NULL DEFAULT 0 CHECK (progress_current >= 0);
 ALTER TABLE quest ADD COLUMN progress_target INTEGER NOT NULL DEFAULT 1 CHECK (progress_target > 0);
 
+-- Terminal quests are immutable at runtime, so temporarily replace the guard
+-- while deriving the additive progress representation from preserved status.
+DROP TRIGGER IF EXISTS quest_terminal_update;
+UPDATE quest SET progress_current=progress_target WHERE status='completed';
+CREATE TRIGGER quest_terminal_update BEFORE UPDATE ON quest
+WHEN OLD.status IN ('completed','attempted','dropped')
+BEGIN SELECT RAISE(ABORT,'quest_terminal'); END;
+
 CREATE TABLE character (
   id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL UNIQUE REFERENCES owner(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,

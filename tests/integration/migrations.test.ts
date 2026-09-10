@@ -98,12 +98,45 @@ describe("migrations", () => {
           "INSERT INTO north_star(id,owner_id,title,motivation,status,created_at,updated_at,version) VALUES ('n1','o1','North','Why','active',?,?,2)",
         )
         .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO chapter(id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at,version) VALUES ('c1','o1','Chapter','Intent','2026-09-01','2026-10-01','active',?,?,2)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO milestone(id,owner_id,chapter_id,title,done_condition,status,sort_order,created_at,updated_at,version) VALUES ('m1','o1','c1','Milestone','Done','active',0,?,?,2)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO quest(id,owner_id,local_date,title,done_condition,reason,size,source,status,milestone_id,created_at,updated_at,version) VALUES ('q1','o1','2026-09-02','Quest','Done','Reason','small','owner','proposed','m1',?,?,1)",
+        )
+        .run(now, now);
+      connection.sqlite
+        .prepare(
+          "UPDATE quest SET status='accepted',role='main',accepted_size='small',accepted_at=? WHERE id='q1'",
+        )
+        .run(now);
+      connection.sqlite
+        .prepare(
+          "INSERT INTO quest_outcome(id,quest_id,owner_id,outcome,occurred_at,reflection,accepted_size) VALUES ('qo1','q1','o1','completed',?,'Kept history','small')",
+        )
+        .run(now);
       const before = {
         owner: connection.sqlite.prepare("SELECT * FROM owner").get(),
         aspect: connection.sqlite
           .prepare("SELECT * FROM character_aspect")
           .get(),
         star: connection.sqlite.prepare("SELECT * FROM north_star").get(),
+        chapter: connection.sqlite.prepare("SELECT * FROM chapter").get(),
+        milestone: connection.sqlite.prepare("SELECT * FROM milestone").get(),
+        quest: connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,local_date,title,done_condition,reason,size,source,status,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at,created_at,updated_at,version FROM quest",
+          )
+          .get(),
+        outcome: connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
       };
       fs.copyFileSync(
         path.resolve("migrations/0002_game_backend.sql"),
@@ -119,6 +152,29 @@ describe("migrations", () => {
       expect(
         connection.sqlite.prepare("SELECT * FROM north_star").get(),
       ).toEqual(before.star);
+      expect(connection.sqlite.prepare("SELECT * FROM chapter").get()).toEqual(
+        before.chapter,
+      );
+      expect(
+        connection.sqlite.prepare("SELECT * FROM milestone").get(),
+      ).toEqual(before.milestone);
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,local_date,title,done_condition,reason,size,source,status,role,milestone_id,life_lived,repeat_family_key,accepted_size,accepted_at,created_at,updated_at,version FROM quest",
+          )
+          .get(),
+      ).toEqual(before.quest);
+      expect(
+        connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
+      ).toEqual(before.outcome);
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT progress_current progressCurrent,progress_target progressTarget FROM quest WHERE id='q1'",
+          )
+          .get(),
+      ).toEqual({ progressCurrent: 1, progressTarget: 1 });
       expect(
         connection.sqlite
           .prepare("SELECT count(*) FROM character WHERE owner_id='o1'")

@@ -42,6 +42,39 @@ function completionsByAttribute(
   return counts;
 }
 
+type KnownGuardrail = {
+  id: string;
+  category: string;
+  statement: string;
+};
+
+function protectiveKind(category: string): MissionProposal["kind"] {
+  if (category === "connection") return "relationship";
+  if (category === "novelty" || category === "custom") return "exploration";
+  return "rest";
+}
+
+function protectiveCopy(kind: MissionProposal["kind"]): {
+  title: string;
+  doneCondition: string;
+} {
+  if (kind === "relationship")
+    return {
+      title: "Protect connection",
+      doneCondition: "Make one deliberate act of connection.",
+    };
+  if (kind === "exploration")
+    return {
+      title: "Make room to explore",
+      doneCondition:
+        "Spend 20 minutes following curiosity without an outcome target.",
+    };
+  return {
+    title: "Protect recovery",
+    doneCondition: "Take a deliberate 20-minute recovery pause.",
+  };
+}
+
 export class DeterministicMissionGenerator implements MissionGenerator {
   readonly kind = "deterministic" as const;
   generate(context: GameMasterContext): GeneratedPlan {
@@ -73,13 +106,10 @@ export class DeterministicMissionGenerator implements MissionGenerator {
       completed.filter((entry) => entry.kind !== "rest").length >=
         OVER_INDEX_THRESHOLD &&
       !completed.some((entry) => entry.kind === "rest");
-    const protective =
-      capacity === "low" ||
-      overIndexed ||
-      (context.activeGuardrails.status === "known" &&
-        context.activeGuardrails.value.some((g) =>
-          ["sleep", "connection", "recovery", "novelty"].includes(g.category),
-        ));
+    const guardrails =
+      context.activeGuardrails.status === "known"
+        ? context.activeGuardrails.value
+        : [];
 
     const becoming =
       context.becomingStatement.status === "known"
@@ -98,13 +128,19 @@ export class DeterministicMissionGenerator implements MissionGenerator {
       : "";
 
     const proposals: MissionProposal[] = [];
-    if (protective || !attributes.length)
+    const addProtectiveProposal = (
+      kind: MissionProposal["kind"],
+      rationale: string,
+      guardrail?: KnownGuardrail,
+    ) => {
+      if (proposals.length >= 3) return;
+      const copy = protectiveCopy(kind);
       proposals.push({
-        rank: 1,
-        title: "Protect recovery",
-        doneCondition: "Take a deliberate 20-minute recovery pause.",
+        rank: proposals.length + 1,
+        title: copy.title,
+        doneCondition: copy.doneCondition,
         size: "small",
-        kind: "rest",
+        kind,
         attributeIds: attributes[0] ? [attributes[0].id] : [],
         questId: null,
         chapterId:
@@ -112,16 +148,34 @@ export class DeterministicMissionGenerator implements MissionGenerator {
             ? context.activeChapter.value.id
             : null,
         rationale:
-          (overIndexed
-            ? `Recent activity shows ${completed.filter((e) => e.kind !== "rest").length} completed missions and no recovery.`
-            : "Capacity and guardrails make recovery eligible.") +
+          rationale +
+          (guardrail ? ` Guardrail: "${guardrail.statement}".` : "") +
           identityClause +
           rationaleSuffix,
-        citations:
-          context.activeGuardrails.status === "known"
-            ? context.activeGuardrails.value.map((g) => g.id)
-            : [],
+        citations: guardrail ? [guardrail.id] : [],
       });
+    };
+
+    if (capacity === "low")
+      addProtectiveProposal(
+        "rest",
+        "Today's low capacity makes recovery the first priority.",
+      );
+    else if (overIndexed)
+      addProtectiveProposal(
+        "rest",
+        `Recent activity shows ${completed.filter((e) => e.kind !== "rest").length} completed missions and no recovery.`,
+      );
+
+    for (const guardrail of guardrails) {
+      const kind = protectiveKind(guardrail.category);
+      if (completed.some((entry) => entry.kind === kind)) continue;
+      addProtectiveProposal(
+        kind,
+        `The active ${guardrail.category} guardrail is not represented in recent completed activity.`,
+        guardrail,
+      );
+    }
 
     for (const attribute of attributes.slice(
       0,
@@ -160,25 +214,13 @@ export class DeterministicMissionGenerator implements MissionGenerator {
     }
 
     if (!proposals.length)
-      proposals.push({
-        rank: 1,
-        title: "Explore what matters today",
-        doneCondition:
-          "Spend 10 minutes identifying one meaningful next action.",
-        size: "small",
-        kind: "exploration",
-        attributeIds: [],
-        questId: null,
-        chapterId: null,
-        rationale:
-          `No linked attributes were available.` +
-          identityClause +
-          rationaleSuffix,
-        citations: [],
-      });
+      addProtectiveProposal(
+        "exploration",
+        "No linked attributes were available, so the plan leaves room to discover what matters today.",
+      );
 
     return {
-      generatorVersion: "deterministic-game-v2",
+      generatorVersion: "deterministic-game-v3",
       planFingerprint: createHash("sha256")
         .update(JSON.stringify(context))
         .digest("hex"),

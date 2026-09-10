@@ -18,7 +18,7 @@ const baseContext = (): GameMasterContext => ({
 });
 
 describe("deterministic game master", () => {
-  it("preserves unknown context and emits a ranked protective mission without network", () => {
+  it("preserves unknown context and emits a ranked exploratory mission without network", () => {
     const context: GameMasterContext = {
       ownerLocalDate: "2026-09-09",
       becomingStatement: unknown,
@@ -35,7 +35,7 @@ describe("deterministic game master", () => {
     expect(one.proposals).toHaveLength(1);
     expect(one.proposals[0]).toMatchObject({
       rank: 1,
-      kind: "rest",
+      kind: "exploration",
       attributeIds: [],
     });
     expect(one.proposals[0]!.rationale).toContain("Unknown context:");
@@ -134,6 +134,66 @@ describe("deterministic game master", () => {
     });
     expect(plan.proposals[0]).toMatchObject({ rank: 1, kind: "rest" });
     expect(plan.proposals[0]!.rationale).toContain("no recovery");
+  });
+
+  it.each([
+    ["sleep", "rest"],
+    ["recovery", "rest"],
+    ["connection", "relationship"],
+    ["novelty", "exploration"],
+  ] as const)(
+    "maps an underserved %s guardrail to a %s mission",
+    (category, kind) => {
+      const plan = new DeterministicMissionGenerator().generate({
+        ...baseContext(),
+        activeGuardrails: known([
+          { id: `g-${category}`, category, statement: `Protect ${category}` },
+        ]),
+        recentActivity: known([]),
+      });
+
+      expect(plan.proposals[0]).toMatchObject({
+        rank: 1,
+        kind,
+        citations: [`g-${category}`],
+      });
+      expect(plan.proposals[0]!.rationale).toContain(`Protect ${category}`);
+    },
+  );
+
+  it("derives a custom protective mission from the user's statement", () => {
+    const withGuardrail = (statement: string) =>
+      new DeterministicMissionGenerator().generate({
+        ...baseContext(),
+        activeGuardrails: known([
+          { id: "g-custom", category: "custom", statement },
+        ]),
+        recentActivity: known([]),
+      });
+    const family = withGuardrail("Protect family time");
+    const solitude = withGuardrail("Protect solitude");
+
+    expect(family.proposals[0]).toMatchObject({
+      kind: "exploration",
+      citations: ["g-custom"],
+    });
+    expect(family.proposals[0]!.rationale).toContain("Protect family time");
+    expect(solitude.proposals[0]!.rationale).toContain("Protect solitude");
+    expect(family.proposals).not.toEqual(solitude.proposals);
+  });
+
+  it("uses exploration when no attributes or protective inputs are known", () => {
+    const plan = new DeterministicMissionGenerator().generate({
+      ...baseContext(),
+      attributes: unknown,
+      activeGuardrails: known([]),
+    });
+    expect(plan.proposals).toHaveLength(1);
+    expect(plan.proposals[0]).toMatchObject({
+      rank: 1,
+      kind: "exploration",
+      attributeIds: [],
+    });
   });
 
   it("ignores incomplete activity and stays deterministic", () => {
