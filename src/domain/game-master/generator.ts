@@ -14,6 +14,11 @@ export interface MissionGenerator {
   generate(context: GameMasterContext): GeneratedPlan;
 }
 
+// Sustained completed work with no recovery in the recent window. The product
+// guardrail is explicit that the best mission is sometimes rest, so this is a
+// first-class trigger rather than a tie-breaker.
+const OVER_INDEX_THRESHOLD = 3;
+
 function unknowns(context: GameMasterContext): string[] {
   return Object.entries(context)
     .filter(
@@ -24,29 +29,74 @@ function unknowns(context: GameMasterContext): string[] {
     )
     .map(([key]) => key);
 }
+
+// How many recently completed missions touched each attribute. Attributes with
+// the fewest are the ones the user has been neglecting.
+function completionsByAttribute(
+  completed: ReadonlyArray<{ attributeIds: string[] }>,
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of completed)
+    for (const id of entry.attributeIds)
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+  return counts;
+}
+
 export class DeterministicMissionGenerator implements MissionGenerator {
   readonly kind = "deterministic" as const;
   generate(context: GameMasterContext): GeneratedPlan {
+    // Narrow inline: a stored boolean does not narrow the ContextValue union.
+    const completed =
+      context.recentActivity.status === "known"
+        ? context.recentActivity.value.filter((entry) => entry.completed)
+        : [];
+    const activityKnown = context.recentActivity.status === "known";
+    const touched = completionsByAttribute(completed);
+
+    // Neglect first, then the user's own ordering. When recent activity is
+    // unknown every count is 0, so this degrades exactly to sortOrder.
     const attributes =
       context.attributes.status === "known"
         ? [...context.attributes.value].sort(
-            (a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id),
+            (a, b) =>
+              (touched.get(a.id) ?? 0) - (touched.get(b.id) ?? 0) ||
+              a.sortOrder - b.sortOrder ||
+              a.id.localeCompare(b.id),
           )
         : [];
+
     const capacity =
       context.todayCheckIn.status === "known"
         ? context.todayCheckIn.value.capacity
         : null;
+    const overIndexed =
+      completed.filter((entry) => entry.kind !== "rest").length >=
+        OVER_INDEX_THRESHOLD &&
+      !completed.some((entry) => entry.kind === "rest");
     const protective =
       capacity === "low" ||
+      overIndexed ||
       (context.activeGuardrails.status === "known" &&
         context.activeGuardrails.value.some((g) =>
           ["sleep", "connection", "recovery", "novelty"].includes(g.category),
         ));
+
+    const becoming =
+      context.becomingStatement.status === "known"
+        ? context.becomingStatement.value.trim()
+        : "";
+    // Ground each rationale in the identity the user said they are building
+    // toward. Never synthesized: absent input stays absent, and the unknown
+    // list below still reports it.
+    const identityClause = becoming
+      ? ` It advances who you are becoming: "${becoming}".`
+      : "";
+
     const missing = unknowns(context);
     const rationaleSuffix = missing.length
       ? ` Unknown context: ${missing.join(", ")}.`
       : "";
+
     const proposals: MissionProposal[] = [];
     if (protective || !attributes.length)
       proposals.push({
@@ -61,16 +111,28 @@ export class DeterministicMissionGenerator implements MissionGenerator {
           context.activeChapter.status === "known"
             ? context.activeChapter.value.id
             : null,
-        rationale: `Capacity and guardrails make recovery eligible.${rationaleSuffix}`,
+        rationale:
+          (overIndexed
+            ? `Recent activity shows ${completed.filter((e) => e.kind !== "rest").length} completed missions and no recovery.`
+            : "Capacity and guardrails make recovery eligible.") +
+          identityClause +
+          rationaleSuffix,
         citations:
           context.activeGuardrails.status === "known"
             ? context.activeGuardrails.value.map((g) => g.id)
             : [],
       });
+
     for (const attribute of attributes.slice(
       0,
       Math.max(0, 3 - proposals.length),
-    ))
+    )) {
+      const recent = touched.get(attribute.id) ?? 0;
+      const activityClause = !activityKnown
+        ? ""
+        : recent === 0
+          ? " No recently completed mission touched it."
+          : ` ${recent} recently completed mission${recent === 1 ? "" : "s"} touched it.`;
       proposals.push({
         rank: proposals.length + 1,
         title: `Advance ${attribute.name}`,
@@ -83,7 +145,11 @@ export class DeterministicMissionGenerator implements MissionGenerator {
           context.activeChapter.status === "known"
             ? context.activeChapter.value.id
             : null,
-        rationale: `Selected from the user-defined ${attribute.name} attribute.${rationaleSuffix}`,
+        rationale:
+          `Selected from the user-defined ${attribute.name} attribute.` +
+          activityClause +
+          identityClause +
+          rationaleSuffix,
         citations: [
           attribute.id,
           ...(context.activeChapter.status === "known"
@@ -91,6 +157,8 @@ export class DeterministicMissionGenerator implements MissionGenerator {
             : []),
         ],
       });
+    }
+
     if (!proposals.length)
       proposals.push({
         rank: 1,
@@ -102,11 +170,15 @@ export class DeterministicMissionGenerator implements MissionGenerator {
         attributeIds: [],
         questId: null,
         chapterId: null,
-        rationale: `No linked attributes were available.${rationaleSuffix}`,
+        rationale:
+          `No linked attributes were available.` +
+          identityClause +
+          rationaleSuffix,
         citations: [],
       });
+
     return {
-      generatorVersion: "deterministic-game-v1",
+      generatorVersion: "deterministic-game-v2",
       planFingerprint: createHash("sha256")
         .update(JSON.stringify(context))
         .digest("hex"),
