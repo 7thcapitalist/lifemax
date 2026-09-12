@@ -98,6 +98,59 @@ describe("game backend", () => {
     ).toBe(1);
     connection.sqlite.close();
   });
+  it("rejects progress missions without attributes at the repository boundary", () => {
+    const { connection, game, ownerId } = setup();
+    expect(() =>
+      game.createMission(
+        ownerId,
+        "2026-09-09",
+        {
+          title: "Unlinked progress",
+          doneCondition: "Done",
+          kind: "progress",
+          size: "major",
+          attributeIds: [],
+          questId: null,
+          chapterId: null,
+          repeatFamilyKey: null,
+        },
+        now,
+      ),
+    ).toThrow(/require an attribute/i);
+
+    const attributeId = game.characterSheet(ownerId).attributes[0]!.id;
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-09",
+      {
+        title: "Linked progress",
+        doneCondition: "Done",
+        kind: "progress",
+        size: "major",
+        attributeIds: [attributeId],
+        questId: null,
+        chapterId: null,
+        repeatFamilyKey: null,
+      },
+      now,
+    );
+
+    expect(() =>
+      game.updateMission(
+        ownerId,
+        mission.id,
+        { attributeIds: [], status: "accepted" },
+        now,
+      ),
+    ).toThrow(/require an attribute/i);
+    expect(game.listMissions(ownerId, "2026-09-09")[0]).toMatchObject({
+      id: mission.id,
+      status: "proposed",
+      attributeIds: [attributeId],
+    });
+    expect(game.characterSheet(ownerId).wallet.coinBalance).toBe(0);
+    connection.sqlite.close();
+  });
   it("keeps coins distinct from real-money vocabulary and rejects unaffordable rewards", () => {
     const { connection, game, ownerId } = setup();
     const reward = game.createReward(

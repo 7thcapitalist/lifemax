@@ -11,6 +11,7 @@ import type {
 } from "@/contracts/game";
 import {
   assertChapterTransition,
+  assertMissionAttributes,
   assertRedeemable,
 } from "@/domain/game/invariants";
 import {
@@ -293,6 +294,7 @@ export class SqliteGameRepositories implements GameRepository {
   ) {
     const id = newId();
     return this.connection.sqlite.transaction(() => {
+      assertMissionAttributes(input.kind, input.attributeIds);
       for (const a of input.attributeIds) {
         if (
           !this.connection.sqlite
@@ -343,7 +345,23 @@ export class SqliteGameRepositories implements GameRepository {
           "MISSION_NOT_EDITABLE",
           "Only proposed missions can be edited.",
         );
+      const finalKind = input.kind ?? current.kind;
+      const finalAttributeIds = input.attributeIds ?? current.attributeIds;
+      assertMissionAttributes(finalKind, finalAttributeIds);
       if (input.attributeIds) {
+        for (const a of input.attributeIds) {
+          if (
+            !this.connection.sqlite
+              .prepare(
+                "SELECT 1 FROM character_aspect WHERE owner_id=? AND id=? AND archived_at IS NULL",
+              )
+              .get(ownerId, a)
+          )
+            throw new DomainError(
+              "ATTRIBUTE_NOT_FOUND",
+              "Attribute not found.",
+            );
+        }
         this.connection.sqlite
           .prepare(
             "DELETE FROM mission_attribute WHERE owner_id=? AND mission_id=?",
@@ -387,13 +405,14 @@ export class SqliteGameRepositories implements GameRepository {
     return this.connection.sqlite.transaction(() => {
       const row = this.connection.sqlite
         .prepare(
-          `SELECT id,local_date localDate,title,accepted_size acceptedSize,accepted_stretch acceptedStretch,repeat_family_key repeatFamilyKey,quest_id questId,chapter_id chapterId,status FROM mission WHERE owner_id=? AND id=?`,
+          `SELECT id,local_date localDate,title,kind,accepted_size acceptedSize,accepted_stretch acceptedStretch,repeat_family_key repeatFamilyKey,quest_id questId,chapter_id chapterId,status FROM mission WHERE owner_id=? AND id=?`,
         )
         .get(ownerId, id) as
         | {
             id: string;
             localDate: string;
             title: string;
+            kind: MissionView["kind"];
             acceptedSize: "small" | "standard" | "major" | null;
             acceptedStretch: number;
             repeatFamilyKey: string | null;
@@ -424,6 +443,10 @@ export class SqliteGameRepositories implements GameRepository {
         level: number;
         xpIntoLevel: number;
       }>;
+      assertMissionAttributes(
+        row.kind,
+        links.map((link) => link.id),
+      );
       const family =
         row.repeatFamilyKey ??
         `${row.title.trim().toLowerCase().replace(/\s+/g, " ")}|${links

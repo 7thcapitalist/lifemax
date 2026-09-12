@@ -174,12 +174,40 @@ describe("deterministic game master", () => {
     const solitude = withGuardrail("Protect solitude");
 
     expect(family.proposals[0]).toMatchObject({
-      kind: "exploration",
+      kind: "rest",
+      title: "Honor your guardrail",
       citations: ["g-custom"],
     });
+    expect(family.proposals[0]!.doneCondition).toContain("Protect family time");
     expect(family.proposals[0]!.rationale).toContain("Protect family time");
     expect(solitude.proposals[0]!.rationale).toContain("Protect solitude");
     expect(family.proposals).not.toEqual(solitude.proposals);
+  });
+
+  it("does not contradict a custom guardrail with generic exploration", () => {
+    const plan = new DeterministicMissionGenerator().generate({
+      ...baseContext(),
+      activeGuardrails: known([
+        {
+          id: "g-family-dinner",
+          category: "custom",
+          statement: "Protect family dinner; do not schedule solo exploration",
+        },
+      ]),
+      recentActivity: known([]),
+    });
+
+    expect(plan.proposals[0]).toMatchObject({
+      kind: "rest",
+      title: "Honor your guardrail",
+      citations: ["g-family-dinner"],
+    });
+    expect(plan.proposals[0]!.doneCondition).toContain(
+      "Protect family dinner; do not schedule solo exploration",
+    );
+    expect(plan.proposals[0]!.doneCondition).not.toContain(
+      "following curiosity",
+    );
   });
 
   it("uses exploration when no attributes or protective inputs are known", () => {

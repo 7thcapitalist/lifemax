@@ -226,6 +226,17 @@ describe("game HTTP routes", () => {
     });
     expect(missionResponse.status).toBe(201);
     const mission = (await missionResponse.json()) as { id: string };
+    const invalidAcceptance = await mutate(
+      updateMission,
+      `/api/v1/missions/${mission.id}`,
+      "PATCH",
+      { attributeIds: [], status: "accepted" },
+      { params: Promise.resolve({ id: mission.id }) },
+    );
+    expect(invalidAcceptance.status).toBe(409);
+    expect(await invalidAcceptance.json()).toMatchObject({
+      code: "MISSION_ATTRIBUTE_REQUIRED",
+    });
     expect(
       (
         await mutate(

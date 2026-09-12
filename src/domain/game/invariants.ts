@@ -8,6 +8,17 @@ export function assertRedeemable(balance: number, cost: number): void {
     );
 }
 
+export function assertMissionAttributes(
+  kind: string,
+  attributeIds: readonly string[],
+): void {
+  if (kind === "progress" && attributeIds.length === 0)
+    throw new DomainError(
+      "MISSION_ATTRIBUTE_REQUIRED",
+      "Progress missions require an attribute.",
+    );
+}
+
 export function assertChapterTransition(from: string, to: string): void {
   if (from === to) return;
   const allowed =
