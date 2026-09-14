@@ -15,11 +15,22 @@ export default defineConfig({
   use: {
     ...devices["Desktop Chrome"],
     baseURL: BASE_URL,
+    launchOptions: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE }
+      : undefined,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
   projects: [
     { name: "journeys", testMatch: /journeys\.spec\.ts/ },
+    {
+      name: "frontend",
+      testMatch: /game-frontend\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 375, height: 812 },
+      },
+    },
     {
       name: "screenshots",
       testMatch: /screenshots\.spec\.ts/,
