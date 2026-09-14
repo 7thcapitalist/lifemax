@@ -499,13 +499,31 @@ export class SqliteGameRepositories implements GameRepository {
         )
         .pluck()
         .get(ownerId, row.localDate) as number;
+      // Protective missions (rest/relationship/exploration) intentionally
+      // declare no specific attribute link (see assertMissionAttributes),
+      // since a guardrail has no data-model tie to one aspect. That must not
+      // mean the earned XP is discarded: it still represents real character
+      // growth, so it is spread evenly across every current attribute
+      // instead of being credited to none.
+      const creditTargets = links.length
+        ? links
+        : (this.connection.sqlite
+            .prepare(
+              `SELECT a.id,a.emphasis,p.level,p.xp_into_level xpIntoLevel FROM character_aspect a JOIN attribute_progress p ON p.owner_id=a.owner_id AND p.aspect_id=a.id WHERE a.owner_id=? ORDER BY a.sort_order,a.id`,
+            )
+            .all(ownerId) as Array<{
+            id: string;
+            emphasis: "active" | "maintenance" | "dormant";
+            level: number;
+            xpIntoLevel: number;
+          }>);
       const split = splitXp(
         applyDailyCap(computed.total, already),
-        links.map((a) => a.id),
+        creditTargets.map((a) => a.id),
       );
       const awards: MissionCompletionResponse["xpAwards"] = [];
       for (const part of split) {
-        const current = links.find((a) => a.id === part.aspectId)!;
+        const current = creditTargets.find((a) => a.id === part.aspectId)!;
         const next = applyXp(current.level, current.xpIntoLevel, part.points);
         this.connection.sqlite
           .prepare(
@@ -602,7 +620,7 @@ export class SqliteGameRepositories implements GameRepository {
         awards.some(
           (award) =>
             award.level >
-            links.find((link) => link.id === award.attributeId)!.level,
+            creditTargets.find((link) => link.id === award.attributeId)!.level,
         )
       )
         unlock("first_attribute_level");

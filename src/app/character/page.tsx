@@ -100,6 +100,18 @@ export default function CharacterPage() {
                 View achievements
               </Link>
             </section>
+            <section className="premium-card stack-sm">
+              <div className="card-topline">
+                <Badge tone="progress">Academics</Badge>
+              </div>
+              <h2>Coursework and GPA</h2>
+              <p className="meta">
+                One dimension of the character, entered by you.
+              </p>
+              <Link className="button btn-secondary" href="/academics">
+                Open academics
+              </Link>
+            </section>
             <section
               className="screen-grid screen-grid--two"
               aria-labelledby="aspects-title"

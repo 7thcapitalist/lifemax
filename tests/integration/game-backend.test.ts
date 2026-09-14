@@ -98,6 +98,32 @@ describe("game backend", () => {
     ).toBe(1);
     connection.sqlite.close();
   });
+  it("still credits real XP when completing a protective mission with no declared attribute", () => {
+    const { connection, game, ownerId } = setup();
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-09",
+      {
+        title: "Protect rest",
+        doneCondition: "Took the evening off",
+        kind: "rest",
+        size: "small",
+        attributeIds: [],
+        questId: null,
+        chapterId: null,
+        repeatFamilyKey: null,
+      },
+      now,
+    );
+    game.updateMission(ownerId, mission.id, { status: "accepted" }, now);
+    const result = game.completeMission(ownerId, mission.id, undefined, now);
+    expect(result.coinAward).toBeGreaterThan(0);
+    expect(result.xpAwards.length).toBeGreaterThan(0);
+    expect(
+      result.xpAwards.reduce((sum, award) => sum + award.points, 0),
+    ).toBeGreaterThan(0);
+    connection.sqlite.close();
+  });
   it("rejects progress missions without attributes at the repository boundary", () => {
     const { connection, game, ownerId } = setup();
     expect(() =>

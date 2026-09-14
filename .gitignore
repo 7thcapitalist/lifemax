@@ -23,5 +23,9 @@ blob-report/
 playwright/.cache/
 tests/e2e/artifacts/tmp/
 
-# Factory gate evidence (per-task proof artifacts, never product files)
-evidence/
+# Factory gate evidence (per-task proof artifacts, never product files).
+# Anchored: a run writes evidence to the worktree root, and an unanchored
+# pattern would also swallow product source in any nested directory of that
+# name — which is how factory/lib/evidence/ was silently dropped from every
+# `git add -A` in this repository until #167.
+/evidence/

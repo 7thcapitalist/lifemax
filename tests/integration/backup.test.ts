@@ -107,7 +107,11 @@ describe("shipped SQLite backup and restore CLIs", () => {
     } finally {
       fs.rmSync(directory, { recursive: true });
     }
-  }, 15_000);
+    // Spawns two subprocess CLIs (backup + restore:check), each forking its
+    // own pnpm/node process. QA measured 11.8-19.5s wall-clock for this test
+    // alone under concurrent build/test load on a shared host, so 15s left
+    // no real margin and caused repeatable flaky timeouts.
+  }, 45_000);
 
   it("rejects a target path traversing a symbolic-link parent", () => {
     const directory = fs.mkdtempSync(
