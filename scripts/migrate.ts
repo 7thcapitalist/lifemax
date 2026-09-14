@@ -4,7 +4,11 @@ import { openDatabase } from "@/infrastructure/db/client";
 import { runMigrations } from "@/infrastructure/db/migrate";
 
 const config = parseConfig(process.env);
-const connection = openDatabase(path.resolve(config.DATABASE_PATH));
+const connection = openDatabase(
+  config.DB_DRIVER === "sqlite"
+    ? { ...config, DATABASE_PATH: path.resolve(config.DATABASE_PATH) }
+    : config,
+);
 try {
   runMigrations(connection, path.resolve("migrations"));
 } finally {

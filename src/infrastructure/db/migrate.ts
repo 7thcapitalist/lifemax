@@ -54,7 +54,7 @@ export function validateMigrationHistory(
       throw new Error("MIGRATION_NOT_APPLIED: " + migration.name);
 }
 
-export function runMigrations(
+function runMigrationsLocked(
   connection: DatabaseConnection,
   migrationsDirectory: string,
 ): void {
@@ -65,10 +65,10 @@ export function runMigrations(
     .prepare("PRAGMA table_info(__lifemaxing_migrations)")
     .all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === "checksum")) {
-    const legacyName = connection.sqlite
+    const legacy = connection.sqlite
       .prepare("SELECT name FROM __lifemaxing_migrations ORDER BY name LIMIT 1")
-      .pluck()
-      .get() as string | undefined;
+      .get() as { name: string } | undefined;
+    const legacyName = legacy?.name;
     if (legacyName)
       throw new Error("MIGRATION_CHECKSUM_MISSING: " + legacyName);
     connection.sqlite.exec(
@@ -95,9 +95,16 @@ export function runMigrations(
       continue;
     }
     if (prior) throw new Error("MIGRATION_CHECKSUM_MISSING: " + name);
-    connection.sqlite.transaction(() => {
-      connection.sqlite.exec(sql);
-      record.run(name, checksum, new Date().toISOString());
-    })();
+    connection.sqlite.exec(sql);
+    record.run(name, checksum, new Date().toISOString());
   }
+}
+
+export function runMigrations(
+  connection: DatabaseConnection,
+  migrationsDirectory: string,
+): void {
+  connection.sqlite
+    .transaction(() => runMigrationsLocked(connection, migrationsDirectory))
+    .immediate();
 }

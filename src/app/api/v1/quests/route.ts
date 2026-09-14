@@ -16,6 +16,33 @@ import { runtime as getRuntime } from "@/infrastructure/runtime";
 
 export const runtime = "nodejs";
 
+export async function GET(request: NextRequest) {
+  const app = getRuntime();
+  const auth = requireSession(request, app.auth);
+  if (!auth)
+    return errorResponse(401, "UNAUTHENTICATED", "Authentication required.");
+  try {
+    const date = new URL(request.url).searchParams.get("date") ?? undefined;
+    return applyRotatedSession(
+      NextResponse.json(app.game.listQuests(auth.ownerId, date)),
+      auth,
+      app.config.APP_ORIGIN,
+    );
+  } catch (error) {
+    if (error instanceof DomainError)
+      return applyRotatedSession(
+        errorResponse(409, error.code, error.message),
+        auth,
+        app.config.APP_ORIGIN,
+      );
+    return applyRotatedSession(
+      errorResponse(500, "QUEST_FAILED", "Quests could not be loaded."),
+      auth,
+      app.config.APP_ORIGIN,
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   const app = getRuntime();
   if (!sameOrigin(request, app.config.APP_ORIGIN))

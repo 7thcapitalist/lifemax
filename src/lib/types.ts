@@ -126,6 +126,24 @@ export type CharacterResponse = {
     statement: string;
     status: string;
   }>;
+  character: { id: string };
+  attributes: Array<{
+    id: string;
+    name: string;
+    emphasis: "active" | "maintenance" | "dormant";
+    sortOrder: number;
+    level: number;
+    xpIntoLevel: number;
+    xpForNextLevel: number;
+  }>;
+  wallet: { coinBalance: number };
+  activeQuest: {
+    id: string;
+    title: string;
+    progressCurrent: number;
+    progressTarget: number;
+  } | null;
+  achievements: { unlocked: number; total: number };
 };
 
 export type ChroniclePage = {

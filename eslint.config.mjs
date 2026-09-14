@@ -15,6 +15,10 @@ export default tseslint.config(
       "test-results/**",
       "blob-report/**",
       "docs/qa/screenshots/**",
+      // Factory gate proof, not product code. It is git-ignored, but ESLint
+      // does not read .gitignore the way Prettier does, so a QA agent's
+      // scratch .ts here would otherwise fail the project's own lint gate.
+      "evidence/**",
       "next-env.d.ts",
     ],
   },

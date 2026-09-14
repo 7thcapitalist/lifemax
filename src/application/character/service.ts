@@ -3,11 +3,13 @@ import type {
   OwnerRepository,
 } from "@/application/ports/persistence";
 import { DomainError } from "@/domain/shared/errors";
+import type { GameRepository } from "@/application/ports/game";
 
 export class CharacterService {
   constructor(
     private readonly owners: OwnerRepository,
     private readonly character: CharacterReadRepository,
+    private readonly game?: GameRepository,
   ) {}
 
   get(ownerId: string) {
@@ -25,6 +27,7 @@ export class CharacterService {
           }
         : null,
       guardrails: this.character.listGuardrails(ownerId),
+      ...(this.game ? this.game.characterSheet(ownerId) : {}),
     };
   }
 }

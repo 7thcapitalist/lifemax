@@ -8,6 +8,7 @@ import { ChronicleService } from "@/application/chronicle/service";
 import { OnboardingService } from "@/application/onboarding/service";
 import { PlanningService } from "@/application/planning/service";
 import { TodayService } from "@/application/today/service";
+import { GameService } from "@/application/game/service";
 import { GET as bootstrap } from "@/app/api/v1/bootstrap/route";
 import { POST as login } from "@/app/api/v1/auth/session/route";
 import { POST as generateBriefing } from "@/app/api/v1/briefings/[localDate]/generate/route";
@@ -23,8 +24,10 @@ import { PATCH as updateQuest } from "@/app/api/v1/quests/[id]/route";
 import { POST as createQuest } from "@/app/api/v1/quests/route";
 import { GET as today } from "@/app/api/v1/today/route";
 import { DeterministicBriefingGenerator } from "@/domain/briefing/generator";
+import { DeterministicMissionGenerator } from "@/domain/game-master/generator";
 import { IntlCalendarService } from "@/infrastructure/clock/system";
 import { SqliteRepositories } from "@/infrastructure/db/repositories";
+import { SqliteGameRepositories } from "@/infrastructure/db/repositories-game";
 import { type AppRuntime, installTestRuntime } from "@/infrastructure/runtime";
 import { FixedClock, migratedDatabase } from "../helpers";
 
@@ -77,6 +80,7 @@ function installRuntime() {
   const clock = new FixedClock(new Date("2026-09-03T12:00:00Z"));
   const calendar = new IntlCalendarService();
   const repositories = new SqliteRepositories(connection);
+  const gameRepositories = new SqliteGameRepositories(connection);
   const briefingGenerator = new DeterministicBriefingGenerator();
   const auth = new AuthService(
     repositories.owners,
@@ -91,6 +95,7 @@ function installRuntime() {
       PORT: 3000,
       APP_ORIGIN: ORIGIN,
       SETUP_MODE: "disabled",
+      DB_DRIVER: "sqlite",
       DATABASE_PATH: ":memory:",
       AI_MODE: "disabled",
     },
@@ -132,6 +137,13 @@ function installRuntime() {
       repositories.character,
     ),
     chronicle: new ChronicleService(repositories.planning),
+    game: new GameService(
+      repositories.owners,
+      gameRepositories,
+      clock,
+      calendar,
+      new DeterministicMissionGenerator(),
+    ),
   };
   installTestRuntime(value);
   return value;

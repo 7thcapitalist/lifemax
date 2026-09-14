@@ -16,6 +16,7 @@ import {
   northStarAspects,
   northStars,
   observations,
+  ownerDeleteGuard,
   owners,
   questAspects,
   questOutcomes,
@@ -23,11 +24,24 @@ import {
   sessions,
   sessionTokenHistory,
   xpLedger,
+  characters,
+  attributeProgress,
+  missionPlans,
+  missions,
+  missionAttributes,
+  attributeXpAwards,
+  rewards,
+  rewardRedemptions,
+  coinLedger,
+  achievementDefinitions,
+  achievementUnlocks,
+  academicEntries,
 } from "@/infrastructure/db/schema";
 import { migratedDatabase } from "../helpers";
 
 const tables = [
   owners,
+  ownerDeleteGuard,
   credentials,
   sessions,
   sessionTokenHistory,
@@ -49,6 +63,18 @@ const tables = [
   evidenceLinks,
   xpLedger,
   observations,
+  characters,
+  attributeProgress,
+  missionPlans,
+  missions,
+  missionAttributes,
+  attributeXpAwards,
+  rewards,
+  rewardRedemptions,
+  coinLedger,
+  achievementDefinitions,
+  achievementUnlocks,
+  academicEntries,
 ];
 
 describe("executable SQL and Drizzle metadata", () => {
