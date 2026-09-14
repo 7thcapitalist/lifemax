@@ -156,6 +156,10 @@ describe("deterministic game master", () => {
         rank: 1,
         kind,
         citations: [`g-${category}`],
+        // Protective missions honor a guardrail, not a user-defined
+        // attribute: there is no data-model link from a guardrail's
+        // category to any one aspect, so no attribute should be credited.
+        attributeIds: [],
       });
       expect(plan.proposals[0]!.rationale).toContain(`Protect ${category}`);
     },

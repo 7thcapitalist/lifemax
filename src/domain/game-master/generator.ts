@@ -157,7 +157,14 @@ export class DeterministicMissionGenerator implements MissionGenerator {
         doneCondition: copy.doneCondition,
         size: "small",
         kind,
-        attributeIds: attributes[0] ? [attributes[0].id] : [],
+        // Protective missions (rest/relationship/exploration) honor a
+        // guardrail, not a specific user-defined attribute — there is no
+        // data-model link from a guardrail's category to any one aspect, and
+        // crediting attributes[0] mis-attributed XP to whatever attribute
+        // happened to sort first. assertMissionAttributes only requires an
+        // attribute for "progress" kind missions, so leaving this empty is
+        // correct rather than a workaround.
+        attributeIds: [],
         questId: null,
         chapterId:
           context.activeChapter.status === "known"
