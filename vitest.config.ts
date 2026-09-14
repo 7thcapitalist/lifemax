@@ -7,6 +7,15 @@ export default defineConfig({
     projects: [
       {
         test: {
+          name: "component",
+          include: ["tests/component/**/*.test.tsx"],
+          environment: "jsdom",
+          setupFiles: ["tests/component/setup.ts"],
+        },
+        resolve: { alias },
+      },
+      {
+        test: {
           name: "unit",
           include: ["tests/unit/**/*.test.ts"],
           environment: "node",

@@ -1,110 +1,123 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { ErrorBanner, LiveRegion } from "@/components/Feedback";
 import { useRequireSession } from "@/components/useRequireSession";
-import { ApiError, apiFetch } from "@/lib/api";
+import {
+  AttributeBar,
+  Badge,
+  CoinBalance,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ProgressBar,
+  ScreenIntro,
+} from "@/design-system";
 import type { CharacterResponse } from "@/lib/types";
+import { useResource } from "@/lib/useResource";
 
 export default function CharacterPage() {
   const { boot, error: sessionError } = useRequireSession({
     requireOnboardingComplete: true,
   });
-  const [character, setCharacter] = useState<CharacterResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!boot) return;
-    void (async () => {
-      try {
-        setCharacter(await apiFetch<CharacterResponse>("/api/v1/character"));
-      } catch (err) {
-        if (err instanceof ApiError) setError(err.message);
-        else setError("Could not load Character.");
-      }
-    })();
-  }, [boot]);
-
-  if (!boot || !character) {
-    return (
-      <AppShell showNav>
-        <main className="panel">
-          <ErrorBanner message={error ?? sessionError} />
-          <LiveRegion message="Loading Character…" />
-        </main>
-      </AppShell>
-    );
-  }
-
+  const { resource, reload } = useResource<CharacterResponse>(
+    boot ? "/api/v1/character" : null,
+    (data) => !data.attributes.length,
+  );
   return (
-    <AppShell showNav subtitle="Identity">
-      <main className="panel stack">
-        <div className="hero-quiet">
-          <p className="eyebrow">Character</p>
-          <h1>Who you are becoming</h1>
-          <p>{character.becomingStatement}</p>
-        </div>
-        <ErrorBanner message={error ?? sessionError} />
-
-        <section aria-labelledby="aspects-heading" className="stack">
-          <h2 id="aspects-heading">Aspects</h2>
-          {character.aspects.map((aspect) => (
-            <article key={aspect.id} className="aspect-card stack-sm">
-              <p className="emphasis">{aspect.emphasis}</p>
-              <h3>{aspect.name}</h3>
-              <p>{aspect.definition}</p>
-              <p className="meta">Desired: {aspect.desiredIdentity}</p>
-            </article>
-          ))}
-        </section>
-
-        <section aria-labelledby="stars-heading" className="stack">
-          <h2 id="stars-heading">North Stars</h2>
-          {character.northStars.length === 0 ? (
-            <p className="meta">No North Stars yet.</p>
-          ) : (
-            character.northStars.map((star) => (
-              <article key={star.id} className="aspect-card stack-sm">
-                <h3>{star.title}</h3>
-                <p>{star.motivation}</p>
-              </article>
-            ))
-          )}
-        </section>
-
-        <section aria-labelledby="chapter-heading" className="stack">
-          <h2 id="chapter-heading">Chapter</h2>
-          {character.activeChapter ? (
-            <>
-              <h3>{character.activeChapter.title}</h3>
-              <p>{character.activeChapter.intent}</p>
-              <p className="meta">
-                {character.activeChapter.startDate} →{" "}
-                {character.activeChapter.endDate}
-              </p>
-              {character.activeChapter.milestones.map((milestone) => (
-                <article key={milestone.id} className="aspect-card stack-sm">
-                  <h3>{milestone.title}</h3>
-                  <p>{milestone.doneCondition}</p>
-                  <p className="meta">{milestone.status}</p>
+    <AppShell showNav subtitle="Character state">
+      <main className="screen">
+        {sessionError ? <ErrorState message={sessionError} /> : null}
+        {resource.status === "loading" ? (
+          <LoadingState label="Loading character sheet…" />
+        ) : null}
+        {resource.status === "error" ? (
+          <ErrorState message={resource.message} retry={() => void reload()} />
+        ) : null}
+        {resource.status === "empty" ? (
+          <EmptyState
+            title="Your attributes are waiting"
+            message="Finish onboarding to give your character shape."
+          />
+        ) : null}
+        {resource.status === "ready" ? (
+          <>
+            <ScreenIntro
+              eyebrow="Character sheet"
+              title="Who you are becoming"
+              aside={<CoinBalance value={resource.data.wallet.coinBalance} />}
+            >
+              {resource.data.becomingStatement}
+            </ScreenIntro>
+            <section className="screen-grid" aria-labelledby="attributes-title">
+              <div className="section-heading">
+                <h2 id="attributes-title">Attributes</h2>
+                <span className="meta">Earned through evidence</span>
+              </div>
+              {resource.data.attributes.map((attribute) => (
+                <AttributeBar key={attribute.id} attribute={attribute} />
+              ))}
+            </section>
+            {resource.data.activeQuest ? (
+              <section className="premium-card stack-sm">
+                <div className="card-topline">
+                  <Badge tone="active">Active quest</Badge>
+                  <Link href="/quests">Open quests</Link>
+                </div>
+                <h2>{resource.data.activeQuest.title}</h2>
+                <ProgressBar
+                  value={resource.data.activeQuest.progressCurrent}
+                  max={resource.data.activeQuest.progressTarget}
+                  label="Active quest progress"
+                />
+              </section>
+            ) : null}
+            <section className="guardrail-card">
+              <Badge tone="rest">Guardrails</Badge>
+              <h2>Protect the person playing</h2>
+              {resource.data.guardrails.length ? (
+                resource.data.guardrails.map((guardrail) => (
+                  <p key={guardrail.id}>
+                    <strong>{guardrail.category}:</strong> {guardrail.statement}
+                  </p>
+                ))
+              ) : (
+                <p>No guardrails defined yet.</p>
+              )}
+            </section>
+            <section className="premium-card stack">
+              <div className="card-topline">
+                <div>
+                  <Badge tone="exploration">Legacy</Badge>
+                  <h2>Achievements</h2>
+                </div>
+                <strong>
+                  {resource.data.achievements.unlocked} /{" "}
+                  {resource.data.achievements.total}
+                </strong>
+              </div>
+              <Link className="button btn-secondary" href="/achievements">
+                View achievements
+              </Link>
+            </section>
+            <section
+              className="screen-grid screen-grid--two"
+              aria-labelledby="aspects-title"
+            >
+              <h2 id="aspects-title" className="sr-only">
+                Identity aspects
+              </h2>
+              {resource.data.aspects.map((aspect) => (
+                <article className="premium-card stack-sm" key={aspect.id}>
+                  <Badge tone={aspect.emphasis}>{aspect.emphasis}</Badge>
+                  <h3>{aspect.name}</h3>
+                  <p>{aspect.definition}</p>
+                  <p className="meta">{aspect.desiredIdentity}</p>
                 </article>
               ))}
-            </>
-          ) : (
-            <p className="meta">No active chapter.</p>
-          )}
-        </section>
-
-        <section aria-labelledby="guardrails-heading" className="stack">
-          <h2 id="guardrails-heading">Guardrails</h2>
-          {character.guardrails.map((guardrail) => (
-            <article key={guardrail.id} className="aspect-card stack-sm">
-              <p className="emphasis">{guardrail.category}</p>
-              <p>{guardrail.statement}</p>
-            </article>
-          ))}
-        </section>
+            </section>
+          </>
+        ) : null}
       </main>
     </AppShell>
   );
