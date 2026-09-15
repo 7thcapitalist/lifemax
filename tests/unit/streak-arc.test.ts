@@ -5,6 +5,7 @@ import {
   dayQualifies,
   type StreakDay,
 } from "@/domain/game/streak";
+import { consistencyPercent } from "@/domain/game/policy";
 
 const day = (
   localDate: string,
@@ -46,6 +47,21 @@ describe("streak policy", () => {
       current: 1,
       longest: 3,
     });
+  });
+
+  it("feeds the same computed streak into consistencyPercent so XP cannot disagree with the displayed streak", () => {
+    const days = [
+      day("2026-09-01", true),
+      day("2026-09-02", false, true),
+      day("2026-09-03", true),
+    ];
+    const streak = computeStreak(days, "2026-09-03");
+    expect(streak.current).toBe(3);
+    expect(consistencyPercent(streak)).toBe(115);
+
+    const brokenStreak = computeStreak(days, "2026-09-06");
+    expect(brokenStreak.current).toBe(0);
+    expect(consistencyPercent(brokenStreak)).toBe(100);
   });
 });
 
