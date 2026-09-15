@@ -28,6 +28,12 @@ directly on `main`.
 - `SETUP_MODE` gates onboarding; check its current value before assuming
   onboarding is reachable in a given environment.
 - Single-owner system: there is currently no multi-tenant design intent.
+- Frontend work follows `docs/DESIGN_LANGUAGE.md`. It is the visual contract:
+  colour tokens, the dark scheme, the type scale and the component specs. Read
+  it before writing UI code; do not derive a second design language beside it.
+- Do not sample designs, colour or copy from other products. Structure and
+  interaction conventions are shared vocabulary; another product's visual
+  identity is not.
 
 ## Do not do
 
