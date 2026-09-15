@@ -153,7 +153,7 @@ export type ProgramSummaryView = {
   };
   arc: Pick<
     ChapterProgressView,
-    "id" | "title" | "startDate" | "lengthDays" | "dayCounter"
+    "id" | "title" | "startDate" | "lengthDays" | "dayCounter" | "offerNextArc"
   > | null;
   firstWeek: {
     durationDays: 7;

@@ -740,6 +740,7 @@ export class SqliteGameRepositories implements GameRepository {
             startDate: chapter.startDate,
             lengthDays: chapter.lengthDays,
             dayCounter: chapter.dayCounter,
+            offerNextArc: chapter.offerNextArc,
           }
         : null,
       firstWeek: {
@@ -773,7 +774,6 @@ export class SqliteGameRepositories implements GameRepository {
     ownerId: string,
     id: string,
     localDate = new Date().toISOString().slice(0, 10),
-    offerNextArc = false,
   ): ChapterProgressView {
     const row = this.connection.sqlite
       .prepare(
@@ -794,6 +794,20 @@ export class SqliteGameRepositories implements GameRepository {
     if (!row) throw new DomainError("CHAPTER_NOT_FOUND", "Chapter not found.");
     const lengthDays =
       row.lengthDays ?? daysInclusive(row.startDate, row.endDate);
+    const offerNextArc =
+      row.status === "completed" &&
+      Boolean(
+        this.connection.sqlite
+          .prepare(
+            `SELECT CASE WHEN
+               EXISTS (SELECT 1 FROM chapter_outcome WHERE owner_id=? AND chapter_id=?)
+               AND NOT EXISTS (SELECT 1 FROM chapter WHERE owner_id=? AND status IN ('draft','active'))
+               AND ?=(SELECT chapter_id FROM chapter_outcome WHERE owner_id=? ORDER BY occurred_at DESC,id DESC LIMIT 1)
+             THEN 1 ELSE 0 END`,
+          )
+          .pluck()
+          .get(ownerId, id, ownerId, id, ownerId),
+      );
     return {
       ...row,
       lengthDays,
@@ -826,6 +840,15 @@ export class SqliteGameRepositories implements GameRepository {
       throw new DomainError(
         "CHAPTER_DATES",
         "Chapter end date must not precede start date.",
+      );
+    if (
+      input.endDate &&
+      input.lengthDays !== undefined &&
+      daysInclusive(input.startDate, input.endDate) !== input.lengthDays
+    )
+      throw new DomainError(
+        "CHAPTER_LENGTH",
+        "Chapter length must agree with its start and end dates.",
       );
     const id = newId();
     try {
@@ -875,16 +898,21 @@ export class SqliteGameRepositories implements GameRepository {
           "CHAPTER_DATES",
           "Chapter end date must not precede start date.",
         );
+      const lengthDays =
+        input.startDate || input.endDate
+          ? daysInclusive(start, end)
+          : current.lengthDays;
       try {
         this.connection.sqlite
           .prepare(
-            "UPDATE chapter SET title=?,intent=?,start_date=?,end_date=?,status=?,updated_at=?,version=version+1 WHERE owner_id=? AND id=?",
+            "UPDATE chapter SET title=?,intent=?,start_date=?,end_date=?,length_days=?,status=?,updated_at=?,version=version+1 WHERE owner_id=? AND id=?",
           )
           .run(
             input.title ?? current.title,
             input.intent ?? current.intent,
             start,
             end,
+            lengthDays,
             status,
             now,
             ownerId,
@@ -911,7 +939,7 @@ export class SqliteGameRepositories implements GameRepository {
           .run(newId(), id, ownerId, now);
         this.unlockAchievement(ownerId, "arc_completed", now);
       }
-      return this.chapter(ownerId, id, now.slice(0, 10), completedNow);
+      return this.chapter(ownerId, id, now.slice(0, 10));
     })();
   }
   listAchievements(ownerId: string): AchievementView[] {

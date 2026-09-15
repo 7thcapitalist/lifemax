@@ -385,6 +385,18 @@ describe("game backend", () => {
       status: "completed",
       offerNextArc: true,
     });
+    expect(game.getChapter(ownerId, existing.id, "2026-09-24")).toMatchObject({
+      offerNextArc: true,
+    });
+    expect(
+      game
+        .listChapters(ownerId, "2026-09-24")
+        .find(({ id }) => id === existing.id),
+    ).toMatchObject({ offerNextArc: true });
+    expect(game.programSummary(ownerId, "2026-09-24").arc).toMatchObject({
+      id: existing.id,
+      offerNextArc: true,
+    });
     expect(
       connection.sqlite
         .prepare(
@@ -416,6 +428,46 @@ describe("game backend", () => {
       lengthDays: 66,
       dayCounter: { day: 1, of: 66 },
     });
+    expect(game.getChapter(ownerId, existing.id, "2026-10-02")).toMatchObject({
+      offerNextArc: false,
+    });
+    const resized = game.updateChapter(
+      ownerId,
+      defaultArc.id,
+      { endDate: "2026-10-10" },
+      "2026-10-05T12:00:00.000Z",
+    );
+    expect(resized).toMatchObject({
+      endDate: "2026-10-10",
+      lengthDays: 9,
+      dayCounter: { day: 4, of: 9 },
+    });
+    expect(game.getChapter(ownerId, defaultArc.id, "2026-10-06")).toMatchObject(
+      {
+        lengthDays: 9,
+        dayCounter: { day: 5, of: 9 },
+      },
+    );
+    expect(() =>
+      game.createChapter(
+        ownerId,
+        {
+          title: "Contradictory arc",
+          intent: "Reject inconsistent boundaries",
+          startDate: "2027-01-01",
+          endDate: "2027-01-10",
+          lengthDays: 66,
+          status: "draft",
+        },
+        now,
+      ),
+    ).toThrowError("Chapter length must agree with its start and end dates.");
+    game.updateChapter(
+      ownerId,
+      defaultArc.id,
+      { status: "abandoned" },
+      "2026-10-06T12:00:00.000Z",
+    );
 
     const next = game.createChapter(
       ownerId,
@@ -453,6 +505,9 @@ describe("game backend", () => {
         "2026-10-11T12:00:00.000Z",
       ).offerNextArc,
     ).toBe(true);
+    expect(game.getChapter(ownerId, next.id, "2026-10-12")).toMatchObject({
+      offerNextArc: true,
+    });
     expect(
       connection.sqlite
         .prepare(
