@@ -1,5 +1,25 @@
 export const DEFAULT_ARC_LENGTH_DAYS = 66;
 
+export type ArcStatus = "draft" | "active" | "completed" | "abandoned";
+
+export type ArcCompletionTransition = {
+  chronicleOutcome: "completed";
+  achievementKey: "arc_completed";
+  offerNextArc: true;
+};
+
+export function arcCompletionTransition(
+  previousStatus: ArcStatus,
+  nextStatus: ArcStatus,
+): ArcCompletionTransition | null {
+  if (previousStatus !== "active" || nextStatus !== "completed") return null;
+  return {
+    chronicleOutcome: "completed",
+    achievementKey: "arc_completed",
+    offerNextArc: true,
+  };
+}
+
 const dateValue = (date: string): number =>
   new Date(`${date}T00:00:00Z`).getTime();
 

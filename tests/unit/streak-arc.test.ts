@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arcDayCounter } from "@/domain/game/arc";
+import { arcCompletionTransition, arcDayCounter } from "@/domain/game/arc";
 import {
   computeStreak,
   dayQualifies,
@@ -63,5 +63,22 @@ describe("arc day counter", () => {
       day: 66,
       of: 66,
     });
+  });
+});
+
+describe("arc completion transition", () => {
+  it("records the chronicle outcome, unlocks the achievement, and offers the next arc", () => {
+    expect(arcCompletionTransition("active", "completed")).toEqual({
+      chronicleOutcome: "completed",
+      achievementKey: "arc_completed",
+      offerNextArc: true,
+    });
+  });
+
+  it("does not repeat completion effects or emit them for other transitions", () => {
+    expect(arcCompletionTransition("completed", "completed")).toBeNull();
+    expect(arcCompletionTransition("draft", "completed")).toBeNull();
+    expect(arcCompletionTransition("draft", "active")).toBeNull();
+    expect(arcCompletionTransition("active", "abandoned")).toBeNull();
   });
 });

@@ -15,6 +15,7 @@ import {
   assertRedeemable,
 } from "@/domain/game/invariants";
 import {
+  arcCompletionTransition,
   arcDayCounter,
   dateAfter,
   daysInclusive,
@@ -929,15 +930,14 @@ export class SqliteGameRepositories implements GameRepository {
           );
         throw error;
       }
-      const completedNow =
-        current.status !== "completed" && status === "completed";
-      if (completedNow) {
+      const completion = arcCompletionTransition(current.status, status);
+      if (completion) {
         this.connection.sqlite
           .prepare(
-            "INSERT INTO chapter_outcome(id,chapter_id,owner_id,outcome,occurred_at,reflection) VALUES (?,?,?,'completed',?,NULL)",
+            "INSERT INTO chapter_outcome(id,chapter_id,owner_id,outcome,occurred_at,reflection) VALUES (?,?,?,?,?,NULL)",
           )
-          .run(newId(), id, ownerId, now);
-        this.unlockAchievement(ownerId, "arc_completed", now);
+          .run(newId(), id, ownerId, completion.chronicleOutcome, now);
+        this.unlockAchievement(ownerId, completion.achievementKey, now);
       }
       return this.chapter(ownerId, id, now.slice(0, 10));
     })();
