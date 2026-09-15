@@ -87,13 +87,17 @@ export class GameService {
     this.owner(ownerId);
     return this.game.listQuests(ownerId, date);
   }
+  streak(ownerId: string, date?: string) {
+    return this.game.streak(ownerId, this.date(ownerId, date));
+  }
+  programSummary(ownerId: string, date?: string) {
+    return this.game.programSummary(ownerId, this.date(ownerId, date));
+  }
   listChapters(ownerId: string) {
-    this.owner(ownerId);
-    return this.game.listChapters(ownerId);
+    return this.game.listChapters(ownerId, this.date(ownerId));
   }
   getChapter(ownerId: string, id: string) {
-    this.owner(ownerId);
-    return this.game.getChapter(ownerId, id);
+    return this.game.getChapter(ownerId, id, this.date(ownerId));
   }
   createChapter(ownerId: string, input: CreateChapterInput) {
     this.owner(ownerId);

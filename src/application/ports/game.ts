@@ -17,9 +17,11 @@ import type {
   MissionCompletionResponse,
   MissionProposal,
   MissionView,
+  ProgramSummaryView,
   QuestProgressView,
   RewardRedemptionView,
   RewardView,
+  StreakView,
 } from "@/lib/game-types";
 
 export type CharacterGameSheet = {
@@ -79,8 +81,14 @@ export interface GameRepository {
     now: string,
   ): MissionCompletionResponse;
   listQuests(ownerId: string, localDate?: string): QuestProgressView[];
-  listChapters(ownerId: string): ChapterProgressView[];
-  getChapter(ownerId: string, id: string): ChapterProgressView;
+  streak(ownerId: string, localDate: string): StreakView;
+  programSummary(ownerId: string, localDate: string): ProgramSummaryView;
+  listChapters(ownerId: string, localDate?: string): ChapterProgressView[];
+  getChapter(
+    ownerId: string,
+    id: string,
+    localDate?: string,
+  ): ChapterProgressView;
   createChapter(
     ownerId: string,
     input: CreateChapterInput,

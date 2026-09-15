@@ -1,3 +1,5 @@
+import type { Streak } from "@/domain/game/streak";
+
 export const POLICY_VERSION = "game-v1";
 export const DAILY_XP_CAP = 200;
 export type MissionSize = "small" | "standard" | "major";
@@ -29,20 +31,30 @@ export function alignmentPercent(input: {
       ? 75
       : 100;
 }
-export function consistencyPercent(priorDays: number): number {
-  return 100 + 5 * Math.min(5, Math.max(0, priorDays));
+export function consistencyPercent(streak: Pick<Streak, "current">): number;
+/** @deprecated Pass the computed streak object. */
+export function consistencyPercent(priorDays: number): number;
+export function consistencyPercent(
+  streak: Pick<Streak, "current"> | number,
+): number {
+  const current = typeof streak === "number" ? streak : streak.current;
+  return 100 + 5 * Math.min(5, Math.max(0, current));
 }
 export function computeMissionXp(input: {
   size: MissionSize;
   priorSameFamily: number;
   stretch: boolean;
   alignmentPercent: number;
-  consecutivePriorDays: number;
+  streak?: Pick<Streak, "current">;
+  /** @deprecated Pass the computed streak object. Kept for API compatibility. */
+  consecutivePriorDays?: number;
 }): { total: number; breakdown: XpBreakdown } {
   const base = baseXp(input.size);
   const diminishing = diminishingPercent(input.priorSameFamily);
   const stretch = input.stretch ? 125 : 100;
-  const consistency = consistencyPercent(input.consecutivePriorDays);
+  const consistency = consistencyPercent(
+    input.streak ?? { current: input.consecutivePriorDays ?? 0 },
+  );
   const total = Math.floor(
     (base * diminishing * stretch * input.alignmentPercent * consistency) /
       100_000_000,
