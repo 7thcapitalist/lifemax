@@ -36,18 +36,18 @@ What the system is actually missing is not colour. It is:
 
 Measured against WCAG 2.1 with the current token values. Reproduce with the script in §7.
 
-| Token | Current | Measured | Requirement | Verdict |
-|---|---|---|---|---|
-| `--gold` `#a67632` | body text and badge label | **3.68:1** on `--paper`, **3.34:1** on `--gold-soft` | 4.5:1 for body text | **fails AA** |
-| `--mist` `#d7e3ea` | used as a border | **1.20:1** on `--paper` | 3:1 for a meaningful UI boundary (1.4.11) | **fails** where the border carries meaning |
-| `--sky` `#8fb3c4` | 2.06:1 on `--paper` | — | 4.5:1 as text, 3:1 as boundary | **decorative fill only**, never text |
+| Token              | Current                   | Measured                                             | Requirement                               | Verdict                                    |
+| ------------------ | ------------------------- | ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------ |
+| `--gold` `#a67632` | body text and badge label | **3.68:1** on `--paper`, **3.34:1** on `--gold-soft` | 4.5:1 for body text                       | **fails AA**                               |
+| `--mist` `#d7e3ea` | used as a border          | **1.20:1** on `--paper`                              | 3:1 for a meaningful UI boundary (1.4.11) | **fails** where the border carries meaning |
+| `--sky` `#8fb3c4`  | 2.06:1 on `--paper`       | —                                                    | 4.5:1 as text, 3:1 as boundary            | **decorative fill only**, never text       |
 
 Fixes, verified:
 
 ```css
---gold: #7d5722;        /* was #a67632 — now 5.94:1 on paper, 5.39:1 on gold-soft */
---boundary: #728c9c;    /* new — 3.25:1 on paper; use wherever a border means something */
---hairline: #d7e3ea;    /* the old --mist value, renamed for honesty: decoration only */
+--gold: #7d5722; /* was #a67632 — now 5.94:1 on paper, 5.39:1 on gold-soft */
+--boundary: #728c9c; /* new — 3.25:1 on paper; use wherever a border means something */
+--hairline: #d7e3ea; /* the old --mist value, renamed for honesty: decoration only */
 ```
 
 `--mist` keeps its value for backgrounds and fills. The rule is: **a border that separates two interactive regions, outlines an input, or marks a state uses `--boundary`. A border that is pure texture uses `--hairline`.**
@@ -66,27 +66,27 @@ The metaphor inverts rather than changes: paper becomes night, ink becomes parch
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --ink: #e6eef3;          /* 14.65:1 on --paper */
-    --ink-soft: #b4c6d1;     /*  9.78:1 */
-    --ink-mute: #8ba0ad;     /*  6.33:1 */
+    --ink: #e6eef3; /* 14.65:1 on --paper */
+    --ink-soft: #b4c6d1; /*  9.78:1 */
+    --ink-mute: #8ba0ad; /*  6.33:1 */
     --paper: #141c24;
     --paper-raised: #1d2831;
     --mist: #22303a;
     --hairline: #22303a;
-    --boundary: #5e7888;     /*  3.70:1 on paper, 3.23:1 on raised */
+    --boundary: #5e7888; /*  3.70:1 on paper, 3.23:1 on raised */
     --sky: #3c5a6b;
     --dawn: #2c4453;
-    --grove: #6fbfa5;        /*  7.92:1 */
-    --grove-deep: #a8dcc9;   /* 11.25:1 */
+    --grove: #6fbfa5; /*  7.92:1 */
+    --grove-deep: #a8dcc9; /* 11.25:1 */
     --grove-soft: #1e3b34;
-    --gold: #d9a94e;         /*  7.97:1 */
+    --gold: #d9a94e; /*  7.97:1 */
     --gold-soft: #33280f;
-    --violet: #a99ac4;       /*  6.64:1 */
+    --violet: #a99ac4; /*  6.64:1 */
     --violet-soft: #2a2438;
     --warn: #d9a94e;
     --warn-soft: #33280f;
-    --danger: #e08a8a;       /*  6.69:1 */
-    --focus: #57b9cf;        /*  7.57:1 */
+    --danger: #e08a8a; /*  6.69:1 */
+    --focus: #57b9cf; /*  7.57:1 */
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   }
 }
@@ -103,18 +103,18 @@ The paper texture on `body` (`background-attachment: fixed`) must be re-tuned or
 Sizes are currently set per component. Replace with one scale. The display face (`--font-display`, an old-style serif) carries numbers and headings; the body face carries everything else. This pairing is already the app's signature and stays.
 
 ```css
---text-2xs: 0.6875rem;  /* 11px — cell labels, never body copy */
---text-xs:  0.8125rem;  /* 13px — captions, meta */
---text-sm:  0.9375rem;  /* 15px — secondary body */
---text-base:1.0625rem;  /* 17px — body, the iOS reading default */
---text-lg:  1.25rem;    /* 20px — card titles */
---text-xl:  1.5rem;     /* 24px — section headings */
---text-2xl: 2rem;       /* 32px — screen title */
---text-hero:3.25rem;    /* 52px — the one loud number per screen */
+--text-2xs: 0.6875rem; /* 11px — cell labels, never body copy */
+--text-xs: 0.8125rem; /* 13px — captions, meta */
+--text-sm: 0.9375rem; /* 15px — secondary body */
+--text-base: 1.0625rem; /* 17px — body, the iOS reading default */
+--text-lg: 1.25rem; /* 20px — card titles */
+--text-xl: 1.5rem; /* 24px — section headings */
+--text-2xl: 2rem; /* 32px — screen title */
+--text-hero: 3.25rem; /* 52px — the one loud number per screen */
 
---leading-tight: 1.15;  /* display and numerals */
---leading-snug: 1.35;   /* headings */
---leading-body: 1.55;   /* body copy */
+--leading-tight: 1.15; /* display and numerals */
+--leading-snug: 1.35; /* headings */
+--leading-body: 1.55; /* body copy */
 ```
 
 **One hero per screen.** Today's hero is the day number. Character's hero is the level. The momentum view's hero is the streak. No screen gets two. This is the rule that makes progress legible, and it is the actual lesson worth taking from the category.
@@ -127,14 +127,17 @@ Minimum body size is `--text-base`. Nothing below `--text-xs` may carry meaning 
 
 ```css
 /* arc day states — light */
---day-done: #2f6b5c;     /* = --grove;      5.73:1 on paper */
---day-rest: #5c8ba1;     /* deliberate rest; 3.42:1 on paper */
---day-broken: #91806f;   /* unaccounted;     3.50:1 on paper — muted, NOT --danger */
---day-future: transparent;  /* outlined with --boundary, never filled */
---day-today: #7d5722;    /* = new --gold; ring only, 5.94:1 */
+--day-done: #2f6b5c; /* = --grove;      5.73:1 on paper */
+--day-rest: #5c8ba1; /* deliberate rest; 3.42:1 on paper */
+--day-broken: #91806f; /* unaccounted;     3.50:1 on paper — muted, NOT --danger */
+--day-future: transparent; /* outlined with --boundary, never filled */
+--day-today: #7d5722; /* = new --gold; ring only, 5.94:1 */
 
 /* dark counterparts */
---day-done: #6fbfa5;  --day-rest: #5f93ab;  --day-broken: #7d6f62;  --day-today: #d9a94e;
+--day-done: #6fbfa5;
+--day-rest: #5f93ab;
+--day-broken: #7d6f62;
+--day-today: #d9a94e;
 ```
 
 **A broken day is not an error.** It uses a muted clay, never `--danger`, never red. The product's position is that a missed day is information, not a failure, and the colour has to say that. This is deliberate and is the point at which Lifemaxing diverges from the category.
