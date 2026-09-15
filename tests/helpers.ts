@@ -18,3 +18,22 @@ export function migratedDatabase() {
   runMigrations(connection, path.resolve("migrations"));
   return connection;
 }
+
+/**
+ * The production driver. `openDatabase` routes `DB_DRIVER: "libsql"` through
+ * the libsql package and its adapter, which is a different code path from
+ * `migratedDatabase()` above even though both store rows in memory: the storage
+ * backend is embedded either way, but the JavaScript statement wrapper — where
+ * the pluck contract lives and where it broke — is the production one.
+ * `tests/integration/libsql-contract.test.ts` asserts that this is really so.
+ */
+export function migratedLibsqlDatabase() {
+  const connection = openDatabase({
+    DB_DRIVER: "libsql",
+    DATABASE_PATH: ":memory:",
+    DATABASE_URL: ":memory:",
+    DATABASE_AUTH_TOKEN: "synthetic",
+  });
+  runMigrations(connection, path.resolve("migrations"));
+  return connection;
+}

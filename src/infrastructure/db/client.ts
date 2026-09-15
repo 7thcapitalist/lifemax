@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Libsql from "libsql";
 import type { AppConfig } from "@/infrastructure/config/env";
+import { adaptLibsql } from "./libsql-adapter";
 import * as schema from "./schema";
 
 type DatabaseConfig = Pick<
@@ -26,11 +27,16 @@ export function openDatabase(input: string | DatabaseConfig) {
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     fs.chmodSync(directory, 0o700);
   }
+  // libsql only looks better-sqlite3-compatible; adaptLibsql restates the parts
+  // of the contract it gets wrong, starting with pluck(). See libsql-adapter.ts.
   const sqlite: Database.Database =
     config.DB_DRIVER === "libsql"
-      ? (new Libsql(config.DATABASE_URL!, {
-          authToken: config.DATABASE_AUTH_TOKEN!,
-        } as LibsqlRemoteOptions) as unknown as Database.Database)
+      ? adaptLibsql(
+          new Libsql(config.DATABASE_URL!, {
+            authToken: config.DATABASE_AUTH_TOKEN!,
+          } as LibsqlRemoteOptions),
+          config.DATABASE_URL!,
+        )
       : new Database(config.DATABASE_PATH);
   if (config.DB_DRIVER === "sqlite")
     sqlite.function("lifemaxing_owner_delete_allowed", () => 0);
