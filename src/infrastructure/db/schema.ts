@@ -143,6 +143,7 @@ export const chapters = sqliteTable(
     intent: text("intent").notNull(),
     startDate: text("start_date").notNull(),
     endDate: text("end_date").notNull(),
+    lengthDays: integer("length_days"),
     status: text("status", {
       enum: ["draft", "active", "completed", "abandoned"],
     }).notNull(),
@@ -281,6 +282,24 @@ export const questOutcomes = sqliteTable(
     foreignKey({
       columns: [table.ownerId, table.questId],
       foreignColumns: [quests.ownerId, quests.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+export const chapterOutcomes = sqliteTable(
+  "chapter_outcome",
+  {
+    id: text("id").primaryKey(),
+    chapterId: text("chapter_id").notNull().unique(),
+    ownerId: text("owner_id").notNull(),
+    outcome: text("outcome", { enum: ["completed"] }).notNull(),
+    occurredAt: text("occurred_at").notNull(),
+    reflection: text("reflection"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.ownerId, table.chapterId],
+      foreignColumns: [chapters.ownerId, chapters.id],
     }).onDelete("cascade"),
   ],
 );

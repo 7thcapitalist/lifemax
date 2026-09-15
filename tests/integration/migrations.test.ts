@@ -204,7 +204,11 @@ describe("migrations", () => {
           .prepare("SELECT * FROM character_aspect")
           .get(),
         star: connection.sqlite.prepare("SELECT * FROM north_star").get(),
-        chapter: connection.sqlite.prepare("SELECT * FROM chapter").get(),
+        chapter: connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at,version FROM chapter",
+          )
+          .get(),
         milestone: connection.sqlite.prepare("SELECT * FROM milestone").get(),
         quest: connection.sqlite
           .prepare(
@@ -213,11 +217,12 @@ describe("migrations", () => {
           .get(),
         outcome: connection.sqlite.prepare("SELECT * FROM quest_outcome").get(),
       };
-      // Both, in production order: the game triggers depend on the
+      // In production order: the game triggers depend on the
       // `owner_delete_guard` table that 0002_remote_owner_delete creates.
       for (const name of [
         "0002_remote_owner_delete.sql",
         "0003_game_backend.sql",
+        "0004_streak_arc.sql",
       ])
         fs.copyFileSync(
           path.resolve("migrations", name),
@@ -233,9 +238,27 @@ describe("migrations", () => {
       expect(
         connection.sqlite.prepare("SELECT * FROM north_star").get(),
       ).toEqual(before.star);
-      expect(connection.sqlite.prepare("SELECT * FROM chapter").get()).toEqual(
-        before.chapter,
-      );
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at,version FROM chapter",
+          )
+          .get(),
+      ).toEqual(before.chapter);
+      expect(
+        connection.sqlite
+          .prepare("SELECT length_days FROM chapter WHERE id='c1'")
+          .pluck()
+          .get(),
+      ).toBeNull();
+      expect(
+        connection.sqlite
+          .prepare(
+            "SELECT count(*) FROM achievement_definition WHERE key='arc_completed'",
+          )
+          .pluck()
+          .get(),
+      ).toBe(1);
       expect(
         connection.sqlite.prepare("SELECT * FROM milestone").get(),
       ).toEqual(before.milestone);

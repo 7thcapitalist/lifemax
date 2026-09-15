@@ -9,6 +9,7 @@ import { migratedDatabase, FixedClock } from "../helpers";
 import { GameService } from "@/application/game/service";
 import { IntlCalendarService } from "@/infrastructure/clock/system";
 import type { GameMasterContext } from "@/lib/game-types";
+import { consistencyPercent } from "@/domain/game/policy";
 const now = "2026-09-09T12:00:00.000Z";
 function setup() {
   const connection = migratedDatabase(),
@@ -320,6 +321,152 @@ describe("game backend", () => {
     expect(completed.newlyUnlockedAchievements).not.toContain(
       "first_attribute_level",
     );
+    connection.sqlite.close();
+  });
+  it("uses the same streak object for deliberate-rest qualification and consistency XP", () => {
+    const { connection, game, ownerId } = setup();
+    connection.sqlite
+      .prepare(
+        "INSERT INTO daily_check_in(id,owner_id,local_date,capacity,created_at,updated_at,version) VALUES ('rest-day',?,'2026-09-08','low',?,?,1)",
+      )
+      .run(ownerId, now, now);
+    const streak = game.streak(ownerId, "2026-09-08");
+    expect(streak).toMatchObject({ current: 1, longest: 1 });
+
+    const attributeId = game.characterSheet(ownerId).attributes[0]!.id;
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-09",
+      {
+        title: "Continue after rest",
+        doneCondition: "Done",
+        kind: "progress",
+        size: "small",
+        attributeIds: [attributeId],
+        questId: null,
+        chapterId: null,
+        repeatFamilyKey: "streak-agreement",
+      },
+      now,
+    );
+    game.updateMission(ownerId, mission.id, { status: "accepted" }, now);
+    game.completeMission(ownerId, mission.id, undefined, now);
+    const breakdown = JSON.parse(
+      connection.sqlite
+        .prepare(
+          "SELECT breakdown_json FROM attribute_xp_award WHERE mission_id=? LIMIT 1",
+        )
+        .pluck()
+        .get(mission.id) as string,
+    ) as { consistencyPercent: number };
+    expect(breakdown.consistencyPercent).toBe(consistencyPercent(streak));
+    expect(game.streak(ownerId, "2026-09-09")).toMatchObject({
+      current: 2,
+      longest: 2,
+    });
+    connection.sqlite.close();
+  });
+  it("completes an arc with a chronicle outcome, achievement, and next-arc offer", () => {
+    const { connection, game, ownerId } = setup();
+    const existing = game.listChapters(ownerId, "2026-09-23")[0]!;
+    expect(existing).toMatchObject({
+      lengthDays: 31,
+      dayCounter: { day: 23, of: 31 },
+      offerNextArc: false,
+    });
+
+    const completed = game.updateChapter(
+      ownerId,
+      existing.id,
+      { status: "completed" },
+      "2026-09-23T12:00:00.000Z",
+    );
+    expect(completed).toMatchObject({
+      status: "completed",
+      offerNextArc: true,
+    });
+    expect(
+      connection.sqlite
+        .prepare(
+          "SELECT outcome FROM chapter_outcome WHERE owner_id=? AND chapter_id=?",
+        )
+        .get(ownerId, existing.id),
+    ).toEqual({ outcome: "completed" });
+    expect(
+      connection.sqlite
+        .prepare(
+          "SELECT count(*) FROM achievement_unlock WHERE owner_id=? AND achievement_key='arc_completed'",
+        )
+        .pluck()
+        .get(ownerId),
+    ).toBe(1);
+
+    const defaultArc = game.createChapter(
+      ownerId,
+      {
+        title: "Default arc",
+        intent: "Use the standard length",
+        startDate: "2026-10-02",
+        status: "draft",
+      },
+      now,
+    );
+    expect(defaultArc).toMatchObject({
+      endDate: "2026-12-06",
+      lengthDays: 66,
+      dayCounter: { day: 1, of: 66 },
+    });
+
+    const next = game.createChapter(
+      ownerId,
+      {
+        title: "Next arc",
+        intent: "Continue",
+        startDate: "2026-10-02",
+        lengthDays: 10,
+        status: "active",
+      },
+      now,
+    );
+    expect(next).toMatchObject({
+      endDate: "2026-10-11",
+      lengthDays: 10,
+      dayCounter: { day: 1, of: 10 },
+    });
+    const summary = game.programSummary(ownerId, "2026-10-05");
+    expect(summary).toMatchObject({
+      aspectsTrained: expect.arrayContaining([
+        expect.objectContaining({ name: "Custom A" }),
+      ]),
+      arc: {
+        id: next.id,
+        lengthDays: 10,
+        dayCounter: { day: 4, of: 10 },
+      },
+      firstWeek: { durationDays: 7 },
+    });
+    expect(
+      game.updateChapter(
+        ownerId,
+        next.id,
+        { status: "completed" },
+        "2026-10-11T12:00:00.000Z",
+      ).offerNextArc,
+    ).toBe(true);
+    expect(
+      connection.sqlite
+        .prepare(
+          "SELECT count(*) FROM achievement_unlock WHERE owner_id=? AND achievement_key='arc_completed'",
+        )
+        .pluck()
+        .get(ownerId),
+    ).toBe(1);
+    expect(
+      connection.sqlite
+        .prepare("SELECT count(*) FROM chapter_outcome WHERE owner_id=?")
+        .pluck()
+        .get(ownerId),
+    ).toBe(2);
     connection.sqlite.close();
   });
 });

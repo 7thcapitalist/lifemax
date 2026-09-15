@@ -15,6 +15,12 @@ import {
   assertRedeemable,
 } from "@/domain/game/invariants";
 import {
+  arcDayCounter,
+  dateAfter,
+  daysInclusive,
+  DEFAULT_ARC_LENGTH_DAYS,
+} from "@/domain/game/arc";
+import {
   alignmentPercent,
   applyDailyCap,
   applyXp,
@@ -23,6 +29,7 @@ import {
   POLICY_VERSION,
   splitXp,
 } from "@/domain/game/policy";
+import { computeStreak } from "@/domain/game/streak";
 import { DomainError } from "@/domain/shared/errors";
 import { newId } from "@/domain/shared/id";
 import type {
@@ -34,6 +41,7 @@ import type {
   MissionCompletionResponse,
   MissionProposal,
   MissionView,
+  ProgramSummaryView,
   QuestProgressView,
   RewardRedemptionView,
   RewardView,
@@ -48,6 +56,20 @@ const previousDate = (date: string, days: number) => {
 
 export class SqliteGameRepositories implements GameRepository {
   constructor(private readonly connection: DatabaseConnection) {}
+  private unlockAchievement(
+    ownerId: string,
+    key: string,
+    now: string,
+    missionId: string | null = null,
+  ): boolean {
+    return Boolean(
+      this.connection.sqlite
+        .prepare(
+          "INSERT INTO achievement_unlock(id,owner_id,achievement_key,mission_id,unlocked_at) VALUES (?,?,?,?,?) ON CONFLICT(owner_id,achievement_key) DO NOTHING",
+        )
+        .run(newId(), ownerId, key, missionId, now).changes,
+    );
+  }
   private attributes(ownerId: string, missionId: string): string[] {
     return this.connection.sqlite
       .prepare(
@@ -459,20 +481,6 @@ export class SqliteGameRepositories implements GameRepository {
         )
         .pluck()
         .get(ownerId, row.localDate, family) as number;
-      let consecutive = 0;
-      for (let day = 1; day <= 5; day++) {
-        const found = this.connection.sqlite
-          .prepare(
-            `SELECT 1 FROM mission m JOIN mission_attribute ma ON ma.owner_id=m.owner_id AND ma.mission_id=m.id WHERE m.owner_id=? AND m.status='completed' AND m.local_date=? AND ma.aspect_id IN (${links.map(() => "?").join(",") || "NULL"}) LIMIT 1`,
-          )
-          .get(
-            ownerId,
-            previousDate(row.localDate, day),
-            ...links.map((a) => a.id),
-          );
-        if (!found) break;
-        consecutive++;
-      }
       const linkedToActiveChapterOrQuest = Boolean(
         this.connection.sqlite
           .prepare(
@@ -486,12 +494,13 @@ export class SqliteGameRepositories implements GameRepository {
         allDormant:
           links.length > 0 && links.every((a) => a.emphasis === "dormant"),
       });
+      const priorStreak = this.streak(ownerId, previousDate(row.localDate, 1));
       const computed = computeMissionXp({
         size: row.acceptedSize,
         priorSameFamily: prior,
         stretch: Boolean(row.acceptedStretch),
         alignmentPercent: aligned,
-        consecutivePriorDays: consecutive,
+        streak: priorStreak,
       });
       const already = this.connection.sqlite
         .prepare(
@@ -608,12 +617,7 @@ export class SqliteGameRepositories implements GameRepository {
         .run(now, idempotencyKey ?? null, now, ownerId, id);
       const unlocked: string[] = [];
       const unlock = (key: string) => {
-        const result = this.connection.sqlite
-          .prepare(
-            "INSERT INTO achievement_unlock(id,owner_id,achievement_key,mission_id,unlocked_at) VALUES (?,?,?,?,?) ON CONFLICT(owner_id,achievement_key) DO NOTHING",
-          )
-          .run(newId(), ownerId, key, id, now);
-        if (result.changes) unlocked.push(key);
+        if (this.unlockAchievement(ownerId, key, now, id)) unlocked.push(key);
       };
       unlock("first_mission");
       if (
@@ -660,6 +664,94 @@ export class SqliteGameRepositories implements GameRepository {
         ...(localDate ? [ownerId, localDate] : [ownerId]),
       ) as QuestProgressView[];
   }
+  streak(ownerId: string, localDate: string) {
+    const rows = this.connection.sqlite
+      .prepare(
+        `SELECT localDate,max(completedMission) completedMission,max(deliberateRest) deliberateRest
+         FROM (
+           SELECT local_date localDate,1 completedMission,0 deliberateRest
+           FROM mission WHERE owner_id=? AND status='completed' AND local_date<=?
+           UNION ALL
+           SELECT local_date localDate,0 completedMission,CASE WHEN capacity='low' THEN 1 ELSE 0 END deliberateRest
+           FROM daily_check_in WHERE owner_id=? AND local_date<=?
+         ) GROUP BY localDate ORDER BY localDate`,
+      )
+      .all(ownerId, localDate, ownerId, localDate) as Array<{
+      localDate: string;
+      completedMission: number;
+      deliberateRest: number;
+    }>;
+    return computeStreak(
+      rows.map((row) => ({
+        localDate: row.localDate,
+        completedMission: Boolean(row.completedMission),
+        deliberateRest: Boolean(row.deliberateRest),
+      })),
+      localDate,
+    );
+  }
+  programSummary(ownerId: string, localDate: string): ProgramSummaryView {
+    const aspectsTrained = this.connection.sqlite
+      .prepare(
+        "SELECT id,name,emphasis FROM character_aspect WHERE owner_id=? AND archived_at IS NULL ORDER BY sort_order,id",
+      )
+      .all(ownerId) as ProgramSummaryView["aspectsTrained"];
+    const sampleDays = 28;
+    const counts = this.connection.sqlite
+      .prepare(
+        `SELECT kind,count(*) count FROM mission
+         WHERE owner_id=? AND status='completed' AND local_date BETWEEN date(?,'-27 day') AND ?
+         GROUP BY kind`,
+      )
+      .all(ownerId, localDate, localDate) as Array<{
+      kind: MissionView["kind"];
+      count: number;
+    }>;
+    const byKind: ProgramSummaryView["typicalDay"]["byKind"] = {
+      progress: 0,
+      rest: 0,
+      relationship: 0,
+      exploration: 0,
+    };
+    for (const row of counts) byKind[row.kind] = row.count;
+    const completedMissions = counts.reduce((sum, row) => sum + row.count, 0);
+    const chapterId = this.connection.sqlite
+      .prepare(
+        `SELECT id FROM chapter WHERE owner_id=?
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1`,
+      )
+      .pluck()
+      .get(ownerId) as string | undefined;
+    const chapter = chapterId
+      ? this.chapter(ownerId, chapterId, localDate)
+      : null;
+    return {
+      aspectsTrained,
+      typicalDay: {
+        sampleDays,
+        completedMissions,
+        averageCompletedMissions: completedMissions / sampleDays,
+        byKind,
+      },
+      arc: chapter
+        ? {
+            id: chapter.id,
+            title: chapter.title,
+            startDate: chapter.startDate,
+            lengthDays: chapter.lengthDays,
+            dayCounter: chapter.dayCounter,
+          }
+        : null,
+      firstWeek: {
+        durationDays: 7,
+        rhythm: [
+          "Set capacity for the day.",
+          "Complete at least one mission or deliberately rest.",
+          "Reflect on evidence and adjust the next day.",
+        ],
+      },
+    };
+  }
   private chapterProgress(ownerId: string, id: string) {
     const row = this.connection.sqlite
       .prepare(
@@ -677,10 +769,15 @@ export class SqliteGameRepositories implements GameRepository {
     };
     return { current: row.current ?? 0, target: Math.max(1, row.target) };
   }
-  private chapter(ownerId: string, id: string): ChapterProgressView {
+  private chapter(
+    ownerId: string,
+    id: string,
+    localDate = new Date().toISOString().slice(0, 10),
+    offerNextArc = false,
+  ): ChapterProgressView {
     const row = this.connection.sqlite
       .prepare(
-        "SELECT id,title,intent,start_date startDate,end_date endDate,status,version FROM chapter WHERE owner_id=? AND id=?",
+        "SELECT id,title,intent,start_date startDate,end_date endDate,length_days lengthDays,status,version FROM chapter WHERE owner_id=? AND id=?",
       )
       .get(ownerId, id) as
       | {
@@ -689,14 +786,23 @@ export class SqliteGameRepositories implements GameRepository {
           intent: string;
           startDate: string;
           endDate: string;
+          lengthDays: number | null;
           status: ChapterProgressView["status"];
           version: number;
         }
       | undefined;
     if (!row) throw new DomainError("CHAPTER_NOT_FOUND", "Chapter not found.");
-    return { ...row, ...this.chapterProgress(ownerId, id) };
+    const lengthDays =
+      row.lengthDays ?? daysInclusive(row.startDate, row.endDate);
+    return {
+      ...row,
+      lengthDays,
+      dayCounter: arcDayCounter(row.startDate, lengthDays, localDate),
+      offerNextArc,
+      ...this.chapterProgress(ownerId, id),
+    };
   }
-  listChapters(ownerId: string) {
+  listChapters(ownerId: string, localDate?: string) {
     return (
       this.connection.sqlite
         .prepare(
@@ -704,13 +810,19 @@ export class SqliteGameRepositories implements GameRepository {
         )
         .pluck()
         .all(ownerId) as string[]
-    ).map((id) => this.chapter(ownerId, id));
+    ).map((id) => this.chapter(ownerId, id, localDate));
   }
-  getChapter(ownerId: string, id: string) {
-    return this.chapter(ownerId, id);
+  getChapter(ownerId: string, id: string, localDate?: string) {
+    return this.chapter(ownerId, id, localDate);
   }
   createChapter(ownerId: string, input: CreateChapterInput, now: string) {
-    if (input.endDate < input.startDate)
+    const lengthDays =
+      input.lengthDays ??
+      (input.endDate
+        ? daysInclusive(input.startDate, input.endDate)
+        : DEFAULT_ARC_LENGTH_DAYS);
+    const endDate = input.endDate ?? dateAfter(input.startDate, lengthDays - 1);
+    if (endDate < input.startDate)
       throw new DomainError(
         "CHAPTER_DATES",
         "Chapter end date must not precede start date.",
@@ -719,7 +831,7 @@ export class SqliteGameRepositories implements GameRepository {
     try {
       this.connection.sqlite
         .prepare(
-          "INSERT INTO chapter(id,owner_id,title,intent,start_date,end_date,status,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,1)",
+          "INSERT INTO chapter(id,owner_id,title,intent,start_date,end_date,length_days,status,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,?,1)",
         )
         .run(
           id,
@@ -727,7 +839,8 @@ export class SqliteGameRepositories implements GameRepository {
           input.title,
           input.intent,
           input.startDate,
-          input.endDate,
+          endDate,
+          lengthDays,
           input.status,
           now,
           now,
@@ -743,7 +856,7 @@ export class SqliteGameRepositories implements GameRepository {
         );
       throw error;
     }
-    return this.chapter(ownerId, id);
+    return this.chapter(ownerId, id, now.slice(0, 10));
   }
   updateChapter(
     ownerId: string,
@@ -751,43 +864,55 @@ export class SqliteGameRepositories implements GameRepository {
     input: UpdateChapterInput,
     now: string,
   ) {
-    const current = this.chapter(ownerId, id);
-    const status = input.status ?? current.status;
-    assertChapterTransition(current.status, status);
-    const start = input.startDate ?? current.startDate,
-      end = input.endDate ?? current.endDate;
-    if (end < start)
-      throw new DomainError(
-        "CHAPTER_DATES",
-        "Chapter end date must not precede start date.",
-      );
-    try {
-      this.connection.sqlite
-        .prepare(
-          "UPDATE chapter SET title=?,intent=?,start_date=?,end_date=?,status=?,updated_at=?,version=version+1 WHERE owner_id=? AND id=?",
-        )
-        .run(
-          input.title ?? current.title,
-          input.intent ?? current.intent,
-          start,
-          end,
-          status,
-          now,
-          ownerId,
-          id,
-        );
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("one_active_chapter")
-      )
+    return this.connection.sqlite.transaction(() => {
+      const current = this.chapter(ownerId, id, now.slice(0, 10));
+      const status = input.status ?? current.status;
+      assertChapterTransition(current.status, status);
+      const start = input.startDate ?? current.startDate,
+        end = input.endDate ?? current.endDate;
+      if (end < start)
         throw new DomainError(
-          "ACTIVE_CHAPTER_EXISTS",
-          "An active chapter already exists.",
+          "CHAPTER_DATES",
+          "Chapter end date must not precede start date.",
         );
-      throw error;
-    }
-    return this.chapter(ownerId, id);
+      try {
+        this.connection.sqlite
+          .prepare(
+            "UPDATE chapter SET title=?,intent=?,start_date=?,end_date=?,status=?,updated_at=?,version=version+1 WHERE owner_id=? AND id=?",
+          )
+          .run(
+            input.title ?? current.title,
+            input.intent ?? current.intent,
+            start,
+            end,
+            status,
+            now,
+            ownerId,
+            id,
+          );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes("one_active_chapter")
+        )
+          throw new DomainError(
+            "ACTIVE_CHAPTER_EXISTS",
+            "An active chapter already exists.",
+          );
+        throw error;
+      }
+      const completedNow =
+        current.status !== "completed" && status === "completed";
+      if (completedNow) {
+        this.connection.sqlite
+          .prepare(
+            "INSERT INTO chapter_outcome(id,chapter_id,owner_id,outcome,occurred_at,reflection) VALUES (?,?,?,'completed',?,NULL)",
+          )
+          .run(newId(), id, ownerId, now);
+        this.unlockAchievement(ownerId, "arc_completed", now);
+      }
+      return this.chapter(ownerId, id, now.slice(0, 10), completedNow);
+    })();
   }
   listAchievements(ownerId: string): AchievementView[] {
     return this.connection.sqlite

@@ -46,7 +46,8 @@ export const createChapterSchema = z.object({
   title: text(200),
   intent: text(2000),
   startDate: date,
-  endDate: date,
+  endDate: date.optional(),
+  lengthDays: z.number().int().min(1).max(3650).optional(),
   status: z.enum(["draft", "active"]).default("draft"),
 });
 export const updateChapterSchema = z.object({

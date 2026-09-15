@@ -130,6 +130,35 @@ export type ChapterProgressView = {
   version: number;
   current: number;
   target: number;
+  lengthDays: number;
+  dayCounter: { day: number; of: number };
+  offerNextArc: boolean;
+};
+export type StreakView = {
+  current: number;
+  longest: number;
+  asOfDate: string;
+};
+export type ProgramSummaryView = {
+  aspectsTrained: Array<{
+    id: string;
+    name: string;
+    emphasis: "active" | "maintenance" | "dormant";
+  }>;
+  typicalDay: {
+    sampleDays: number;
+    completedMissions: number;
+    averageCompletedMissions: number;
+    byKind: Record<MissionKind, number>;
+  };
+  arc: Pick<
+    ChapterProgressView,
+    "id" | "title" | "startDate" | "lengthDays" | "dayCounter"
+  > | null;
+  firstWeek: {
+    durationDays: 7;
+    rhythm: string[];
+  };
 };
 export type AchievementView = {
   key: string;

@@ -46,9 +46,9 @@ describe("game XP and coin policy", () => {
   });
   it("caps the consistency modifier at five prior consecutive days", () => {
     expect([
-      consistencyPercent(0),
-      consistencyPercent(3),
-      consistencyPercent(9),
+      consistencyPercent({ current: 0 }),
+      consistencyPercent({ current: 3 }),
+      consistencyPercent({ current: 9 }),
     ]).toEqual([100, 115, 125]);
   });
   it("chooses one alignment tier", () => {
