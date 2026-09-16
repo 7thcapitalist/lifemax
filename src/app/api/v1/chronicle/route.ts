@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   if (!auth)
     return errorResponse(401, "UNAUTHENTICATED", "Authentication required.");
   const cursor = request.nextUrl.searchParams.get("cursor") ?? undefined;
+  const localDate = request.nextUrl.searchParams.get("date") ?? undefined;
   const limitParam = request.nextUrl.searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : 20;
   if (limitParam && (!Number.isInteger(limit) || limit < 1))
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
       auth,
       app.config.APP_ORIGIN,
     );
-  const result = app.chronicle.list(auth.ownerId, cursor, limit);
+  const result = app.chronicle.list(auth.ownerId, cursor, limit, localDate);
   return applyRotatedSession(
     NextResponse.json(result),
     auth,

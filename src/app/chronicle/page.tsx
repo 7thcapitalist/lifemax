@@ -19,23 +19,30 @@ function ChronicleContent() {
 
   useEffect(() => {
     if (!boot) return;
+    setPage(null);
+    setError(null);
     void (async () => {
       try {
-        setPage(await apiFetch<ChroniclePage>("/api/v1/chronicle"));
+        const query = selectedDate
+          ? `?date=${encodeURIComponent(selectedDate)}`
+          : "";
+        setPage(await apiFetch<ChroniclePage>(`/api/v1/chronicle${query}`));
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
         else setError("Could not load Chronicle.");
       }
     })();
-  }, [boot]);
+  }, [boot, selectedDate]);
 
   async function loadMore() {
     if (!page?.nextCursor) return;
     setLoadingMore(true);
     setError(null);
     try {
+      const params = new URLSearchParams({ cursor: page.nextCursor });
+      if (selectedDate) params.set("date", selectedDate);
       const next = await apiFetch<ChroniclePage>(
-        `/api/v1/chronicle?cursor=${encodeURIComponent(page.nextCursor)}`,
+        `/api/v1/chronicle?${params.toString()}`,
       );
       setPage({
         items: [...page.items, ...next.items],

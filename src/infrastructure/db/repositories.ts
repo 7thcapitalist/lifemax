@@ -807,34 +807,31 @@ export class SqliteRepositories
     ownerId: string,
     limit: number,
     cursor?: string,
+    localDate?: string,
   ): { items: QuestOutcomeRecord[]; nextCursor: string | null } {
-    const rows = (
-      cursor
-        ? (this.connection.sqlite
-            .prepare(
-              `SELECT o.id, o.quest_id AS questId, o.outcome, o.occurred_at AS occurredAt,
-                o.reflection, q.title AS questTitle, q.local_date AS localDate
-               FROM quest_outcome o JOIN quest q ON q.id=o.quest_id AND q.owner_id=o.owner_id
-               WHERE o.owner_id=? AND (o.occurred_at < ? OR (o.occurred_at = ? AND o.id < ?))
-               ORDER BY o.occurred_at DESC, o.id DESC LIMIT ?`,
-            )
-            .all(
-              ownerId,
-              cursor.split("|")[0],
-              cursor.split("|")[0],
-              cursor.split("|")[1],
-              limit + 1,
-            ) as QuestOutcomeRecord[])
-        : (this.connection.sqlite
-            .prepare(
-              `SELECT o.id, o.quest_id AS questId, o.outcome, o.occurred_at AS occurredAt,
-                o.reflection, q.title AS questTitle, q.local_date AS localDate
-               FROM quest_outcome o JOIN quest q ON q.id=o.quest_id AND q.owner_id=o.owner_id
-               WHERE o.owner_id=?
-               ORDER BY o.occurred_at DESC, o.id DESC LIMIT ?`,
-            )
-            .all(ownerId, limit + 1) as QuestOutcomeRecord[])
-    ) as QuestOutcomeRecord[];
+    const conditions = ["o.owner_id=?"];
+    const parameters: Array<string | number> = [ownerId];
+    if (localDate) {
+      conditions.push("q.local_date=?");
+      parameters.push(localDate);
+    }
+    if (cursor) {
+      const [occurredAt, id] = cursor.split("|");
+      conditions.push(
+        "(o.occurred_at < ? OR (o.occurred_at = ? AND o.id < ?))",
+      );
+      parameters.push(occurredAt!, occurredAt!, id!);
+    }
+    parameters.push(limit + 1);
+    const rows = this.connection.sqlite
+      .prepare(
+        `SELECT o.id, o.quest_id AS questId, o.outcome, o.occurred_at AS occurredAt,
+          o.reflection, q.title AS questTitle, q.local_date AS localDate
+         FROM quest_outcome o JOIN quest q ON q.id=o.quest_id AND q.owner_id=o.owner_id
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY o.occurred_at DESC, o.id DESC LIMIT ?`,
+      )
+      .all(...parameters) as QuestOutcomeRecord[];
     const hasMore = rows.length > limit;
     const items = hasMore ? rows.slice(0, limit) : rows;
     const last = items[items.length - 1];

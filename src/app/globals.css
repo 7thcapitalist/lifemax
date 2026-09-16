@@ -13,6 +13,7 @@
   --grove: #2f6b5c;
   --grove-deep: #1f4a40;
   --grove-soft: #d9ebe4;
+  --button-primary-text: #f7fbf9;
   --gold: #7d5722;
   --gold-soft: #f3ead8;
   --violet: #63587c;
@@ -74,6 +75,7 @@
     --grove: #6fbfa5;
     --grove-deep: #a8dcc9;
     --grove-soft: #1e3b34;
+    --button-primary-text: #141c24;
     --gold: #d9a94e;
     --gold-soft: #33280f;
     --violet: #a99ac4;
@@ -976,7 +978,7 @@ button:disabled,
 
 .btn-primary {
   background: var(--grove);
-  color: #f7fbf9;
+  color: var(--button-primary-text);
 }
 
 .btn-primary:hover:not(:disabled) {

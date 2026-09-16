@@ -25,6 +25,7 @@ import { POST as createQuest } from "@/app/api/v1/quests/route";
 import { GET as today } from "@/app/api/v1/today/route";
 import { DeterministicBriefingGenerator } from "@/domain/briefing/generator";
 import { DeterministicMissionGenerator } from "@/domain/game-master/generator";
+import { newId } from "@/domain/shared/id";
 import { IntlCalendarService } from "@/infrastructure/clock/system";
 import { SqliteRepositories } from "@/infrastructure/db/repositories";
 import { SqliteGameRepositories } from "@/infrastructure/db/repositories-game";
@@ -505,6 +506,85 @@ describe("planning and today morning loop", () => {
     expect(body.missedDayGap?.message.toLowerCase()).not.toMatch(
       /fail|shame|penalty|streak/,
     );
+  });
+
+  it("filters the full chronicle by date beyond the first page", async () => {
+    active = installRuntime();
+    const { token } = await authedSession(active);
+    const ownerId = active.repositories.owners.findCredential()!.ownerId;
+    const aspectId = active.repositories.character.listAspects(ownerId)[0]!.id;
+    const targetDate = "2026-08-01";
+
+    for (let index = 0; index < 21; index += 1) {
+      const questId = newId(Date.UTC(2026, 7, 1) + index);
+      const occurredAt = new Date(
+        Date.UTC(2026, 7, 1 + index, 12),
+      ).toISOString();
+      const localDate = occurredAt.slice(0, 10);
+      active.repositories.planning.createQuest({
+        id: questId,
+        ownerId,
+        localDate,
+        title: `Chronicle quest ${index}`,
+        doneCondition: "Recorded",
+        reason: "Exercise pagination",
+        size: "small",
+        source: "owner",
+        milestoneId: null,
+        aspectIds: [aspectId],
+        now: occurredAt,
+      });
+      active.repositories.planning.acceptQuest({
+        ownerId,
+        questId,
+        role: "side",
+        now: occurredAt,
+      });
+      active.repositories.planning.resolveQuest({
+        id: newId(Date.UTC(2026, 7, 1) + index + 100),
+        ownerId,
+        questId,
+        outcome: "completed",
+        reflection: index === 0 ? "Old but still reachable" : null,
+        acceptedSize: "small",
+        now: occurredAt,
+      });
+    }
+
+    const firstPage = await chronicle(
+      request("/api/v1/chronicle", {
+        headers: { cookie: `lifemaxing_session=${token}` },
+      }),
+    );
+    const firstPageBody = (await firstPage.json()) as {
+      items: Array<{ localDate: string }>;
+      nextCursor: string | null;
+    };
+    expect(firstPageBody.items).toHaveLength(20);
+    expect(firstPageBody.items).not.toContainEqual(
+      expect.objectContaining({ localDate: targetDate }),
+    );
+    expect(firstPageBody.nextCursor).not.toBeNull();
+
+    const filtered = await chronicle(
+      request(`/api/v1/chronicle?date=${targetDate}`, {
+        headers: { cookie: `lifemaxing_session=${token}` },
+      }),
+    );
+    expect(filtered.status).toBe(200);
+    const filteredBody = (await filtered.json()) as {
+      items: Array<{ localDate: string; reflection: string | null }>;
+      nextCursor: string | null;
+    };
+    expect(filteredBody).toEqual({
+      items: [
+        expect.objectContaining({
+          localDate: targetDate,
+          reflection: "Old but still reachable",
+        }),
+      ],
+      nextCursor: null,
+    });
   });
 
   it("rejects CSRF-less quest mutations and foreign aspect links", async () => {

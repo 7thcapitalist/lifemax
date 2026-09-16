@@ -20,6 +20,10 @@ TEXT_TOKENS = (
 )
 BOUNDARY_TOKENS = ("boundary", "focus")
 BACKGROUNDS = ("paper", "paper-raised")
+COMPONENT_PAIRS = (
+    ("button-primary-text", "grove", 4.5, "primary button"),
+    ("button-primary-text", "grove-deep", 4.5, "primary button hover"),
+)
 
 
 def h2r(value: str) -> tuple[int, int, int]:
@@ -96,6 +100,25 @@ def main() -> int:
                         f"{scheme}: --{role} on --{background} is "
                         f"{measured:.2f}:1, below {required:.1f}:1"
                     )
+
+        for foreground, background, required, label in COMPONENT_PAIRS:
+            if foreground not in palette or background not in palette:
+                failures.append(
+                    f"{scheme}: missing component token for {label} "
+                    f"(--{foreground} on --{background})"
+                )
+                continue
+            measured = ratio(palette[foreground], palette[background])
+            verdict = "PASS" if measured >= required else "FAIL"
+            print(
+                f"{verdict} {scheme:5} {label}: --{foreground} on "
+                f"--{background}: {measured:.2f}:1 (needs {required:.1f}:1)"
+            )
+            if measured < required:
+                failures.append(
+                    f"{scheme}: {label} --{foreground} on --{background} is "
+                    f"{measured:.2f}:1, below {required:.1f}:1"
+                )
 
     if failures:
         print("\nContrast check failed:", file=sys.stderr)
