@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { useRequireSession } from "@/components/useRequireSession";
 import {
@@ -45,32 +46,44 @@ export default function ChapterPage() {
           />
         ) : null}
         {chapters.resource.status === "ready" ? (
-          <section className="screen-grid">
-            {chapters.resource.data.map((chapter) => (
-              <article className="chapter-card stack" key={chapter.id}>
-                <div className="card-topline">
-                  <Badge tone={chapter.status}>{chapter.status}</Badge>
-                  <span className="meta">
-                    {chapter.startDate} — {chapter.endDate}
-                  </span>
-                </div>
-                <div>
-                  <h2>{chapter.title}</h2>
-                  <p>{chapter.intent}</p>
-                </div>
-                <ProgressBar
-                  value={chapter.current}
-                  max={chapter.target}
-                  label={`${chapter.title} progress`}
-                />
-              </article>
-            ))}
-          </section>
+          <>
+            <section className="screen-grid">
+              {chapters.resource.data.map((chapter) => (
+                <article className="chapter-card stack" key={chapter.id}>
+                  <div className="card-topline">
+                    <Badge tone={chapter.status}>{chapter.status}</Badge>
+                    <span className="meta">
+                      {chapter.startDate} — {chapter.endDate}
+                    </span>
+                  </div>
+                  <div>
+                    <h2>{chapter.title}</h2>
+                    <p>{chapter.intent}</p>
+                  </div>
+                  <ProgressBar
+                    value={chapter.current}
+                    max={chapter.target}
+                    label={`${chapter.title} progress`}
+                  />
+                </article>
+              ))}
+            </section>
+            <section className="screen-grid screen-grid--two">
+              <Link className="premium-card route-card" href="/momentum">
+                <span className="eyebrow">Arc</span>
+                <strong>Momentum</strong>
+              </Link>
+              <Link className="premium-card route-card" href="/chronicle">
+                <span className="eyebrow">Evidence</span>
+                <strong>Chronicle</strong>
+              </Link>
+            </section>
+          </>
         ) : null}
         <section className="screen-grid" aria-labelledby="chronicle-title">
           <div className="section-heading">
             <h2 id="chronicle-title">Recent chronicle</h2>
-            <span className="meta">What actually happened</span>
+            <Link href="/chronicle">What actually happened</Link>
           </div>
           {chronicle.resource.status === "loading" ? (
             <LoadingState label="Loading recent evidence…" />

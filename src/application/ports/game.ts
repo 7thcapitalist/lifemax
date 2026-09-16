@@ -10,6 +10,7 @@ import type {
 } from "@/contracts/game";
 import type {
   AcademicEntryView,
+  ArcDayView,
   AchievementView,
   ChapterProgressView,
   DailyPlanResponse,
@@ -82,6 +83,7 @@ export interface GameRepository {
   ): MissionCompletionResponse;
   listQuests(ownerId: string, localDate?: string): QuestProgressView[];
   streak(ownerId: string, localDate: string): StreakView;
+  arcDays(ownerId: string, localDate: string): ArcDayView[];
   programSummary(ownerId: string, localDate: string): ProgramSummaryView;
   listChapters(ownerId: string, localDate?: string): ChapterProgressView[];
   getChapter(

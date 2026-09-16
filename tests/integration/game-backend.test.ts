@@ -366,6 +366,73 @@ describe("game backend", () => {
     });
     connection.sqlite.close();
   });
+  it("classifies every arc day without treating an unfinished today as broken", () => {
+    const { connection, game, ownerId } = setup();
+    const attributeId = game.characterSheet(ownerId).attributes[0]!.id;
+    const mission = game.createMission(
+      ownerId,
+      "2026-09-02",
+      {
+        title: "Day two evidence",
+        doneCondition: "Done",
+        kind: "progress",
+        size: "small",
+        attributeIds: [attributeId],
+        questId: null,
+        chapterId: null,
+        repeatFamilyKey: "arc-day",
+      },
+      now,
+    );
+    game.updateMission(ownerId, mission.id, { status: "accepted" }, now);
+    game.completeMission(ownerId, mission.id, undefined, now);
+    connection.sqlite
+      .prepare(
+        "INSERT INTO daily_check_in(id,owner_id,local_date,capacity,created_at,updated_at,version) VALUES ('arc-rest',?,'2026-09-03','low',?,?,1)",
+      )
+      .run(ownerId, now, now);
+
+    expect(game.arcDays(ownerId, "2026-09-05").slice(0, 6)).toEqual([
+      {
+        localDate: "2026-09-01",
+        dayNumber: 1,
+        status: "broken",
+        isToday: false,
+      },
+      {
+        localDate: "2026-09-02",
+        dayNumber: 2,
+        status: "completed",
+        isToday: false,
+      },
+      {
+        localDate: "2026-09-03",
+        dayNumber: 3,
+        status: "deliberate-rest",
+        isToday: false,
+      },
+      {
+        localDate: "2026-09-04",
+        dayNumber: 4,
+        status: "broken",
+        isToday: false,
+      },
+      {
+        localDate: "2026-09-05",
+        dayNumber: 5,
+        status: "future",
+        isToday: true,
+      },
+      {
+        localDate: "2026-09-06",
+        dayNumber: 6,
+        status: "future",
+        isToday: false,
+      },
+    ]);
+    expect(game.arcDays(ownerId, "2026-09-05")).toHaveLength(31);
+    connection.sqlite.close();
+  });
   it("completes an arc with a chronicle outcome, achievement, and next-arc offer", () => {
     const { connection, game, ownerId } = setup();
     const existing = game.listChapters(ownerId, "2026-09-23")[0]!;

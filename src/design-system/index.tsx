@@ -1,9 +1,109 @@
 import React, { type ReactNode } from "react";
+import Link from "next/link";
 import type {
+  ArcDayView,
   MissionProposal,
   MissionView,
   QuestProgressView,
 } from "@/lib/game-types";
+
+export function ArcHeader({
+  day,
+  total,
+  streak,
+}: {
+  day: number;
+  total: number;
+  streak: number;
+}) {
+  const progress = Math.min(100, Math.max(0, (day / Math.max(1, total)) * 100));
+  return (
+    <section className="arc-header" aria-label={`Day ${day} of ${total}`}>
+      <div className="arc-header__copy">
+        <div className="arc-header__day">
+          <span className="arc-header__prefix">Day</span>
+          <strong>{day}</strong>
+          <span className="arc-header__of">of {total}</span>
+        </div>
+        {streak > 0 ? (
+          <div
+            className="arc-header__streak"
+            aria-label={`${streak} day streak`}
+          >
+            <strong>{streak}</strong>
+            <span>days</span>
+          </div>
+        ) : null}
+      </div>
+      <div
+        className="arc-header__track"
+        role="progressbar"
+        aria-label="Arc progress"
+        aria-valuemin={1}
+        aria-valuemax={total}
+        aria-valuenow={day}
+      >
+        <span style={{ width: `${progress}%` }} />
+      </div>
+    </section>
+  );
+}
+
+const DAY_LABELS: Record<ArcDayView["status"], string> = {
+  completed: "Completed",
+  "deliberate-rest": "Deliberate rest",
+  broken: "Broken",
+  future: "Future",
+};
+
+export function MomentumGrid({ days }: { days: ArcDayView[] }) {
+  return (
+    <div className="momentum-grid" aria-label="Arc momentum by day">
+      {days.map((day) => {
+        const label = `Day ${day.dayNumber}, ${DAY_LABELS[day.status]}${day.isToday ? ", today" : ""}`;
+        const className = `momentum-cell momentum-cell--${day.status}${day.isToday ? " momentum-cell--today" : ""}`;
+        return day.status === "future" ? (
+          <span key={day.localDate} className={className} aria-label={label}>
+            {day.dayNumber}
+          </span>
+        ) : (
+          <Link
+            key={day.localDate}
+            className={className}
+            href={`/chronicle?date=${day.localDate}`}
+            aria-label={label}
+          >
+            {day.dayNumber}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+export function MomentumLegend() {
+  return (
+    <ul className="momentum-legend" aria-label="Momentum grid legend">
+      {(
+        [
+          ["completed", "Completed"],
+          ["deliberate-rest", "Deliberate rest"],
+          ["broken", "Broken"],
+          ["future", "Future"],
+          ["today", "Today"],
+        ] as const
+      ).map(([state, label]) => (
+        <li key={state}>
+          <span
+            className={`legend-mark legend-mark--${state}`}
+            aria-hidden="true"
+          />
+          {label}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function Text({
   as: Tag = "p",

@@ -75,6 +75,11 @@ test("morning loop updates character XP and currency", async ({ page }) => {
       .getByLabel("Statement")
       .fill(onboardingFixture.guardrail.statement);
     await page.getByRole("button", { name: "Complete onboarding" }).click();
+    await page.waitForURL("**/program?from=onboarding");
+    await expect(
+      page.getByRole("heading", { name: onboardingFixture.chapter.title }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Begin Day 1" }).click();
     await page.waitForURL("**/today");
   }
 

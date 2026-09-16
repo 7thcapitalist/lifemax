@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useRequireSession } from "@/components/useRequireSession";
 import {
   AttributeBar,
+  ArcHeader,
   Badge,
   CoinBalance,
   EmptyState,
@@ -19,6 +21,8 @@ import type {
   MissionCompletionResponse,
   MissionProposal,
   MissionView,
+  ProgramSummaryView,
+  StreakView,
 } from "@/lib/game-types";
 import type { Capacity, CharacterResponse, TodayResponse } from "@/lib/types";
 
@@ -26,6 +30,8 @@ type TodayData = {
   today: TodayResponse;
   character: CharacterResponse;
   missions: MissionView[];
+  program: ProgramSummaryView;
+  streak: StreakView;
 };
 type ViewState =
   | { status: "loading" }
@@ -48,14 +54,21 @@ export default function TodayPage() {
     if (!boot) return;
     setState({ status: "loading" });
     try {
-      const [today, character, missions] = await Promise.all([
+      const [today, character, missions, program, streak] = await Promise.all([
         apiFetch<TodayResponse>("/api/v1/today"),
         apiFetch<CharacterResponse>("/api/v1/character"),
         apiFetch<MissionView[]>(`/api/v1/missions?date=${boot.localDate}`),
+        apiFetch<ProgramSummaryView>(
+          `/api/v1/program-summary?date=${boot.localDate}`,
+        ),
+        apiFetch<StreakView>(`/api/v1/streak?date=${boot.localDate}`),
       ]);
       setCapacity(today.checkIn?.capacity ?? "normal");
       setReflection(today.checkIn?.reflection ?? "");
-      setState({ status: "ready", data: { today, character, missions } });
+      setState({
+        status: "ready",
+        data: { today, character, missions, program, streak },
+      });
     } catch (error) {
       setState({
         status: "error",
@@ -250,6 +263,18 @@ export default function TodayPage() {
         ) : null}
         {state.status === "ready" ? (
           <>
+            {state.data.program.arc ? (
+              <>
+                <ArcHeader
+                  day={state.data.program.arc.dayCounter.day}
+                  total={state.data.program.arc.dayCounter.of}
+                  streak={state.data.streak.current}
+                />
+                <Link className="momentum-link" href="/momentum">
+                  View momentum
+                </Link>
+              </>
+            ) : null}
             <ScreenIntro eyebrow="Today" title="Morning plan">
               A humane set of missions shaped by capacity, identity, and the
               life around you.

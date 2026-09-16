@@ -3,11 +3,14 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   AttributeBar,
+  ArcHeader,
   CoinBalance,
   EmptyState,
   ErrorState,
   LoadingState,
   MissionCard,
+  MomentumGrid,
+  MomentumLegend,
   ProgressBar,
   QuestCard,
   Text,
@@ -65,6 +68,58 @@ describe("LifeMax design system", () => {
     expect(
       screen.getByRole("progressbar", { name: "Resolve experience" }),
     ).toHaveAttribute("aria-valuenow", "24");
+  });
+  it("renders the arc header and omits a zero streak", () => {
+    const { rerender } = render(<ArcHeader day={23} total={66} streak={0} />);
+    expect(screen.getByLabelText("Day 23 of 66")).toBeVisible();
+    expect(screen.queryByLabelText(/day streak/)).not.toBeInTheDocument();
+    rerender(<ArcHeader day={23} total={66} streak={4} />);
+    expect(screen.getByLabelText("4 day streak")).toBeVisible();
+  });
+  it("uses marks and links to distinguish momentum states", () => {
+    render(
+      <>
+        <MomentumGrid
+          days={[
+            {
+              localDate: "2026-09-01",
+              dayNumber: 1,
+              status: "completed",
+              isToday: false,
+            },
+            {
+              localDate: "2026-09-02",
+              dayNumber: 2,
+              status: "deliberate-rest",
+              isToday: false,
+            },
+            {
+              localDate: "2026-09-03",
+              dayNumber: 3,
+              status: "broken",
+              isToday: false,
+            },
+            {
+              localDate: "2026-09-04",
+              dayNumber: 4,
+              status: "future",
+              isToday: true,
+            },
+          ]}
+        />
+        <MomentumLegend />
+      </>,
+    );
+    expect(screen.getByLabelText("Day 1, Completed")).toHaveAttribute(
+      "href",
+      "/chronicle?date=2026-09-01",
+    );
+    expect(screen.getByLabelText("Day 4, Future, today")).not.toHaveAttribute(
+      "href",
+    );
+    expect(screen.getByLabelText("Momentum grid legend")).toHaveTextContent(
+      "CompletedDeliberate restBrokenFutureToday",
+    );
   });
   it("renders a dynamic character attribute", () => {
     render(

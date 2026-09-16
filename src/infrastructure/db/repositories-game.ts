@@ -30,12 +30,17 @@ import {
   POLICY_VERSION,
   splitXp,
 } from "@/domain/game/policy";
-import { computeStreak } from "@/domain/game/streak";
+import {
+  computeStreak,
+  dayQualifies,
+  type StreakDay,
+} from "@/domain/game/streak";
 import { DomainError } from "@/domain/shared/errors";
 import { newId } from "@/domain/shared/id";
 import type {
   AcademicEntryView,
   AchievementView,
+  ArcDayView,
   ChapterProgressView,
   DailyPlanResponse,
   GameMasterContext,
@@ -665,31 +670,73 @@ export class SqliteGameRepositories implements GameRepository {
         ...(localDate ? [ownerId, localDate] : [ownerId]),
       ) as QuestProgressView[];
   }
-  streak(ownerId: string, localDate: string) {
+  private currentChapterId(ownerId: string): string | undefined {
+    return this.connection.sqlite
+      .prepare(
+        `SELECT id FROM chapter WHERE owner_id=?
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1`,
+      )
+      .pluck()
+      .get(ownerId) as string | undefined;
+  }
+  private dayEvidence(
+    ownerId: string,
+    fromDate: string,
+    toDate: string,
+  ): StreakDay[] {
     const rows = this.connection.sqlite
       .prepare(
         `SELECT localDate,max(completedMission) completedMission,max(deliberateRest) deliberateRest
          FROM (
            SELECT local_date localDate,1 completedMission,0 deliberateRest
-           FROM mission WHERE owner_id=? AND status='completed' AND local_date<=?
+           FROM mission WHERE owner_id=? AND status='completed' AND local_date BETWEEN ? AND ?
            UNION ALL
            SELECT local_date localDate,0 completedMission,CASE WHEN capacity='low' THEN 1 ELSE 0 END deliberateRest
-           FROM daily_check_in WHERE owner_id=? AND local_date<=?
+           FROM daily_check_in WHERE owner_id=? AND local_date BETWEEN ? AND ?
          ) GROUP BY localDate ORDER BY localDate`,
       )
-      .all(ownerId, localDate, ownerId, localDate) as Array<{
+      .all(ownerId, fromDate, toDate, ownerId, fromDate, toDate) as Array<{
       localDate: string;
       completedMission: number;
       deliberateRest: number;
     }>;
+    return rows.map((row) => ({
+      localDate: row.localDate,
+      completedMission: Boolean(row.completedMission),
+      deliberateRest: Boolean(row.deliberateRest),
+    }));
+  }
+  streak(ownerId: string, localDate: string) {
     return computeStreak(
-      rows.map((row) => ({
-        localDate: row.localDate,
-        completedMission: Boolean(row.completedMission),
-        deliberateRest: Boolean(row.deliberateRest),
-      })),
+      this.dayEvidence(ownerId, "0000-01-01", localDate),
       localDate,
     );
+  }
+  arcDays(ownerId: string, localDate: string): ArcDayView[] {
+    const chapterId = this.currentChapterId(ownerId);
+    if (!chapterId) return [];
+    const chapter = this.chapter(ownerId, chapterId, localDate);
+    const endDate = dateAfter(chapter.startDate, chapter.lengthDays - 1);
+    const evidence = new Map(
+      this.dayEvidence(ownerId, chapter.startDate, endDate).map((day) => [
+        day.localDate,
+        day,
+      ]),
+    );
+    return Array.from({ length: chapter.lengthDays }, (_, index) => {
+      const date = dateAfter(chapter.startDate, index);
+      const day = evidence.get(date);
+      const isToday = date === localDate;
+      const status: ArcDayView["status"] =
+        date > localDate || (isToday && (!day || !dayQualifies(day)))
+          ? "future"
+          : day?.completedMission
+            ? "completed"
+            : day?.deliberateRest
+              ? "deliberate-rest"
+              : "broken";
+      return { localDate: date, dayNumber: index + 1, status, isToday };
+    });
   }
   programSummary(ownerId: string, localDate: string): ProgramSummaryView {
     const aspectsTrained = this.connection.sqlite
@@ -716,13 +763,7 @@ export class SqliteGameRepositories implements GameRepository {
     };
     for (const row of counts) byKind[row.kind] = row.count;
     const completedMissions = counts.reduce((sum, row) => sum + row.count, 0);
-    const chapterId = this.connection.sqlite
-      .prepare(
-        `SELECT id FROM chapter WHERE owner_id=?
-         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,start_date DESC,id DESC LIMIT 1`,
-      )
-      .pluck()
-      .get(ownerId) as string | undefined;
+    const chapterId = this.currentChapterId(ownerId);
     const chapter = chapterId
       ? this.chapter(ownerId, chapterId, localDate)
       : null;

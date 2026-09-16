@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ErrorBanner, LiveRegion } from "@/components/Feedback";
 import { useRequireSession } from "@/components/useRequireSession";
 import { ApiError, apiFetch } from "@/lib/api";
 import type { ChroniclePage } from "@/lib/types";
 
-export default function ChroniclePage() {
+function ChronicleContent() {
+  const selectedDate = useSearchParams().get("date");
   const { boot, error: sessionError } = useRequireSession({
     requireOnboardingComplete: true,
   });
@@ -60,6 +62,10 @@ export default function ChroniclePage() {
     );
   }
 
+  const visibleItems = selectedDate
+    ? page.items.filter((item) => item.localDate === selectedDate)
+    : page.items;
+
   return (
     <AppShell showNav subtitle="Evidence over time">
       <main className="panel stack">
@@ -69,10 +75,17 @@ export default function ChroniclePage() {
           <p>A chronological record — not a scoreboard.</p>
         </div>
         <ErrorBanner message={error ?? sessionError} />
-        {page.items.length === 0 ? (
-          <p className="meta">No outcomes yet. Resolve a quest to begin.</p>
+        {selectedDate ? (
+          <p className="meta">Showing evidence for {selectedDate}.</p>
+        ) : null}
+        {visibleItems.length === 0 ? (
+          <p className="meta">
+            {selectedDate
+              ? `No outcomes were recorded on ${selectedDate}.`
+              : "No outcomes yet. Resolve a quest to begin."}
+          </p>
         ) : (
-          page.items.map((item) => (
+          visibleItems.map((item) => (
             <article key={item.id} className="outcome-card stack-sm">
               <p className="emphasis">
                 {item.outcome} · {item.localDate}
@@ -99,5 +112,13 @@ export default function ChroniclePage() {
         ) : null}
       </main>
     </AppShell>
+  );
+}
+
+export default function ChroniclePage() {
+  return (
+    <Suspense>
+      <ChronicleContent />
+    </Suspense>
   );
 }

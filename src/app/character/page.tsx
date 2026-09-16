@@ -102,6 +102,15 @@ export default function CharacterPage() {
             </section>
             <section className="premium-card stack-sm">
               <div className="card-topline">
+                <Badge tone="active">Program</Badge>
+              </div>
+              <h2>Your program</h2>
+              <Link className="button btn-secondary" href="/program">
+                Open your program
+              </Link>
+            </section>
+            <section className="premium-card stack-sm">
+              <div className="card-topline">
                 <Badge tone="progress">Academics</Badge>
               </div>
               <h2>Coursework and GPA</h2>

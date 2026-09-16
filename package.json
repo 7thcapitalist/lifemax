@@ -31,7 +31,7 @@
     "restore:check": "tsx scripts/restore-check.ts",
     "backup:check": "vitest run --project integration tests/integration/backup.test.ts",
     "audit:prod": "corepack pnpm audit --prod --audit-level high",
-    "verify": "prettier --check . && eslint . --max-warnings=0 && tsc --noEmit && vitest run --project unit --project component && vitest run --project integration && vitest run --project architecture && NEXT_TELEMETRY_DISABLED=1 next build"
+    "verify": "prettier --check . && eslint . --max-warnings=0 && python3 scripts/check-contrast.py && tsc --noEmit && vitest run --project unit --project component && vitest run --project integration && vitest run --project architecture && NEXT_TELEMETRY_DISABLED=1 next build"
   },
   "dependencies": {
     "@node-rs/argon2": "2.0.2",

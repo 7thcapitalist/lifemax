@@ -130,7 +130,7 @@ export default function OnboardingPage() {
         }),
       });
       setStatus("Character sealed.");
-      router.replace("/today");
+      router.replace("/program?from=onboarding");
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError("Onboarding could not be completed.");

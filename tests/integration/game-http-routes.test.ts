@@ -22,6 +22,9 @@ import {
   PATCH as updateChapter,
 } from "@/app/api/v1/chapters/[id]/route";
 import { GET as listAchievements } from "@/app/api/v1/achievements/route";
+import { GET as getArcDays } from "@/app/api/v1/arc-days/route";
+import { GET as getProgramSummary } from "@/app/api/v1/program-summary/route";
+import { GET as getStreak } from "@/app/api/v1/streak/route";
 import {
   GET as listRewards,
   POST as createReward,
@@ -214,6 +217,32 @@ describe("game HTTP routes", () => {
     ).toBe(201);
     expect((await call(listMissions, "/api/v1/missions")).status).toBe(200);
     expect((await call(listQuests, "/api/v1/quests")).status).toBe(200);
+    const streakResponse = await call(
+      getStreak,
+      "/api/v1/streak?date=2026-09-09",
+    );
+    expect(streakResponse.status).toBe(200);
+    expect(await streakResponse.json()).toMatchObject({
+      current: 0,
+      asOfDate: "2026-09-09",
+    });
+    const programResponse = await call(
+      getProgramSummary,
+      "/api/v1/program-summary?date=2026-09-09",
+    );
+    expect(programResponse.status).toBe(200);
+    expect(await programResponse.json()).toMatchObject({
+      arc: { dayCounter: { day: 9, of: 31 } },
+    });
+    const arcDaysResponse = await call(
+      getArcDays,
+      "/api/v1/arc-days?date=2026-09-09",
+    );
+    expect(arcDaysResponse.status).toBe(200);
+    expect(await arcDaysResponse.json()).toHaveLength(31);
+    expect(
+      (await call(getArcDays, "/api/v1/arc-days?date=invalid")).status,
+    ).toBe(422);
 
     const attributeId =
       gameRepository.characterSheet(ownerId).attributes[0]!.id;
