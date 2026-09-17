@@ -139,6 +139,17 @@ export type StreakView = {
   longest: number;
   asOfDate: string;
 };
+export type ArcDayStatus =
+  | "completed"
+  | "deliberate-rest"
+  | "broken"
+  | "future";
+export type ArcDayView = {
+  localDate: string;
+  dayNumber: number;
+  status: ArcDayStatus;
+  isToday: boolean;
+};
 export type ProgramSummaryView = {
   aspectsTrained: Array<{
     id: string;

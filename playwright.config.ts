@@ -34,7 +34,6 @@ export default defineConfig({
     {
       name: "screenshots",
       testMatch: /screenshots\.spec\.ts/,
-      dependencies: ["journeys"],
     },
   ],
   webServer: {

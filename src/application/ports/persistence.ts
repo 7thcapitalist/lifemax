@@ -275,6 +275,7 @@ export interface PlanningRepository {
     ownerId: string,
     limit: number,
     cursor?: string,
+    localDate?: string,
   ): { items: QuestOutcomeRecord[]; nextCursor: string | null };
   findLastActivityDate(ownerId: string): string | null;
   aspectExists(ownerId: string, aspectId: string): boolean;

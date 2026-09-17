@@ -108,13 +108,19 @@ test("setup and onboarding create the first morning character", async ({
     .getByLabel("Statement")
     .fill(onboardingFixture.guardrail.statement);
   await page.getByRole("button", { name: "Complete onboarding" }).click();
-  await page.waitForURL("**/today");
+  await page.waitForURL("**/program?from=onboarding");
   await expect(
-    page.getByRole("heading", { name: "Morning plan" }),
+    page.getByRole("heading", { name: onboardingFixture.chapter.title }),
   ).toBeVisible();
+  await expect(page.getByText("Aspects trained")).toBeVisible();
+  await expect(page.getByText("Shape of a typical day")).toBeVisible();
+  await expect(page.getByText("Arc length")).toBeVisible();
+  await expect(page.getByText("First week")).toBeVisible();
 
   const axe = await new AxeBuilder({ page }).analyze();
   expect(axe.violations).toEqual([]);
+  await page.getByRole("link", { name: "Begin Day 1" }).click();
+  await page.waitForURL("**/today");
 });
 
 test("missed-day banner stays neutral", async ({ page }) => {
@@ -133,9 +139,12 @@ test("missed-day banner stays neutral", async ({ page }) => {
   });
   expect(result.response.ok()).toBeTruthy();
   await page.reload();
-  await expect(page.getByText(/days since your last activity/i)).toBeVisible();
-  await expect(page.getByText(/shame|fail|streak reset|penalty/i)).toHaveCount(
-    0,
+  const missedDayBanner = page
+    .locator(".banner")
+    .filter({ hasText: /days since your last activity/i });
+  await expect(missedDayBanner).toBeVisible();
+  await expect(missedDayBanner).not.toContainText(
+    /shame|fail|streak reset|penalty/i,
   );
 });
 

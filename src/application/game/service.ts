@@ -90,6 +90,9 @@ export class GameService {
   streak(ownerId: string, date?: string) {
     return this.game.streak(ownerId, this.date(ownerId, date));
   }
+  arcDays(ownerId: string, date?: string) {
+    return this.game.arcDays(ownerId, this.date(ownerId, date));
+  }
   programSummary(ownerId: string, date?: string) {
     return this.game.programSummary(ownerId, this.date(ownerId, date));
   }
