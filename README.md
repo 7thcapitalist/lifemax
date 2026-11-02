@@ -1,8 +1,42 @@
 # Lifemaxing
 
-Private, single-owner morning ritual. **D1** delivers a playable manual vertical slice: owner setup, character onboarding, deterministic briefing, quest accept/edit/swap/decline/resolve, and the Today / Character / Chronicle surfaces. External AI, XP/levels, weekly review, Fitbit, telemetry, and notifications remain out of scope.
+A private, single-owner web app that turns a person's real-life goals into an RPG-style morning ritual: a character sheet, weekly quests and a daily briefing, without collapsing a person into one score.
 
-## Requirements
+## Why
+
+Most productivity apps either track everything or guilt you with streaks. The idea here is different: you define the kind of person you want to become, split it into domains (Builder, Body, Knowledge, Academics, Capital, Relationships, Life Lived, Recovery are the defaults), and play quests against those domains. Rest and adventure count as progress, and the app is meant to flag when chasing one stat hurts the others. See [docs/PRODUCT.md](docs/PRODUCT.md) and [docs/DESIGN_LANGUAGE.md](docs/DESIGN_LANGUAGE.md).
+
+## Status
+
+Built, not yet used daily. The playable slice (called D1) works end to end on a real backend; I have not yet run the 7-day personal-use experiment that decides whether it is worth building further.
+
+Works today: owner setup, character onboarding, a deterministic daily briefing, quest accept / edit / swap / decline / resolve, and the Today, Character, Chronicle, Momentum and Program screens. Unit, component, integration, architecture and Playwright tests exist, with committed responsive screenshots in `docs/qa/screenshots/`.
+
+Deliberately not built: any external AI (it is hard-disabled by `AI_MODE=disabled`), XP and levels, weekly review, Fitbit or other integrations, telemetry, notifications. All test data is synthetic.
+
+## How it works
+
+A single-process modular monolith. Dependencies point one way, `app -> application -> domain`, with infrastructure adapters behind ports; a test enforces the boundary.
+
+- Next.js route handlers call application services, which call pure domain policy (`src/domain/`).
+- SQLite (better-sqlite3) locally; remote libSQL on Vercel. Drizzle, ordered transactional SQL migrations with checksums, and append-only triggers on progress records.
+- Auth is Argon2id password hashing, rotating session tokens with a short grace window for in-flight requests, Origin/CSRF checks and source-scoped login throttling. Every personal row carries `owner_id`.
+- Privacy is part of the design: see [docs/privacy-contract.md](docs/privacy-contract.md) and [docs/architecture.md](docs/architecture.md).
+
+## Stack
+
+Next.js 15, React 19, TypeScript, Drizzle, SQLite / libSQL, Zod, Vitest, Playwright with axe, pnpm 10, Node 22.
+
+## What's next
+
+1. Use it for 7 consecutive real days and record what is useful versus performative.
+2. Add a lightweight weekly review.
+3. Define XP rules that resist gaming (still an open question).
+4. Only then consider a basic AI game master, calendar or GitHub evidence, and outside testers. See [context/ROADMAP.md](context/ROADMAP.md).
+
+## Run it
+
+### Requirements
 
 - Node.js 22.19.0 (see `.node-version`)
 - Corepack with pnpm 10.15.1
@@ -52,3 +86,7 @@ The suite invokes the real backup/restore-check CLIs and covers migration checks
 ## Scope
 
 See [architecture](docs/architecture.md) and [privacy contract](docs/privacy-contract.md). All tests use synthetic identities and life data. Committed visual evidence lives under `docs/qa/screenshots/`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
